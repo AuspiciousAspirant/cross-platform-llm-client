@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -46,16 +47,18 @@ void main() {
     appLog.info('App started');
 
     // Initialize Firebase before any Firebase-dependent services
-    try {
-      // await Firebase.initializeApp(
-      //   options: DefaultFirebaseOptions.currentPlatform,
-      // );
-    } catch (e) {
-      appLog.error('[Firebase] Initialization failed', details: e);
+    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS)) {
+      try {
+        // await Firebase.initializeApp(
+        //   options: DefaultFirebaseOptions.currentPlatform,
+        // );
+      } catch (e) {
+        appLog.error('[Firebase] Initialization failed', details: e);
+      }
     }
 
     // Support phones and tablets in portrait or landscape.
-    if (!kIsWeb) {
+    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
       await SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
         DeviceOrientation.landscapeLeft,
@@ -117,8 +120,10 @@ void main() {
     };
     final imageNotifications = Get.put(ImageGenerationNotificationService());
     try {
-      await imageNotifications.init();
-      await imageNotifications.configureBackgroundService();
+      if (!kIsWeb && Platform.isAndroid) {
+        await imageNotifications.init();
+        await imageNotifications.configureBackgroundService();
+      }
     } catch (e) {
       appLog.error('[Notifications] Init failed', details: e);
     }

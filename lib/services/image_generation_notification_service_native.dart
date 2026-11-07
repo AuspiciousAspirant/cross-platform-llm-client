@@ -17,6 +17,7 @@ class ImageGenerationNotificationService {
   bool _initialized = false;
 
   Future<void> init() async {
+    if (!Platform.isAndroid) return;
     if (_initialized) return;
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const settings = InitializationSettings(android: android);

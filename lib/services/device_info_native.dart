@@ -1,6 +1,37 @@
+import 'dart:ffi' as ffi;
 import 'dart:io';
 
+import 'package:ffi/ffi.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
+
+final class _MemoryStatusEx extends ffi.Struct {
+  @ffi.Uint32()
+  external int dwLength;
+
+  @ffi.Uint32()
+  external int dwMemoryLoad;
+
+  @ffi.Uint64()
+  external int ullTotalPhys;
+
+  @ffi.Uint64()
+  external int ullAvailPhys;
+
+  @ffi.Uint64()
+  external int ullTotalPageFile;
+
+  @ffi.Uint64()
+  external int ullAvailPageFile;
+
+  @ffi.Uint64()
+  external int ullTotalVirtual;
+
+  @ffi.Uint64()
+  external int ullAvailVirtual;
+
+  @ffi.Uint64()
+  external int ullAvailExtendedVirtual;
+}
 
 /// Detected SoC family.
 enum SocFamily {
@@ -171,6 +202,54 @@ Future<Map<String, dynamic>> getDeviceInfo() async {
       totalRam = 16.0;
       availableRam = 8.0;
       socFamily = SocFamily.apple;
+    } else if (Platform.isWindows) {
+      totalRam = 16.0;
+      availableRam = 8.0;
+      socFamily = SocFamily.unknown;
+      hardware = 'PC (Windows)';
+      bool detected = false;
+      try {
+        final kernel32 = ffi.DynamicLibrary.open('kernel32.dll');
+        final globalMemoryStatusEx = kernel32.lookupFunction<
+            ffi.Int32 Function(ffi.Pointer<_MemoryStatusEx>),
+            int Function(ffi.Pointer<_MemoryStatusEx>)>('GlobalMemoryStatusEx');
+        final status = calloc<_MemoryStatusEx>();
+        status.ref.dwLength = ffi.sizeOf<_MemoryStatusEx>();
+        final ok = globalMemoryStatusEx(status);
+        if (ok != 0) {
+          totalRam = status.ref.ullTotalPhys / (1024 * 1024 * 1024);
+          availableRam = status.ref.ullAvailPhys / (1024 * 1024 * 1024);
+          detected = true;
+        }
+        calloc.free(status);
+      } catch (_) {}
+
+      if (!detected) {
+        try {
+          final res = await Process.run('powershell', [
+            '-NoProfile',
+            '-Command',
+            '(Get-CimInstance Win32_OperatingSystem).TotalVisibleMemorySize; (Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory'
+          ]).timeout(const Duration(milliseconds: 1500));
+          if (res.exitCode == 0) {
+            final lines = (res.stdout as String)
+                .trim()
+                .split(RegExp(r'\r?\n'))
+                .where((l) => l.trim().isNotEmpty)
+                .toList();
+            if (lines.length >= 2) {
+              final totalKb = double.tryParse(lines[0].trim());
+              final freeKb = double.tryParse(lines[1].trim());
+              if (totalKb != null && totalKb > 0) {
+                totalRam = totalKb / 1024 / 1024;
+              }
+              if (freeKb != null && freeKb > 0) {
+                availableRam = freeKb / 1024 / 1024;
+              }
+            }
+          }
+        } catch (_) {}
+      }
     }
   } catch (e) {
     print('[DeviceInfo] Failed to read device info: $e');

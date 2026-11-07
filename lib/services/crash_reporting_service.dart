@@ -25,6 +25,10 @@ class CrashReportingService extends GetxService {
   bool get isEnabled => _enabled;
 
   Future<CrashReportingService> init() async {
+    if (kIsWeb || !(Platform.isAndroid || Platform.isIOS || Platform.isMacOS)) {
+      _enabled = false;
+      return this;
+    }
     try {
       if (Firebase.apps.isEmpty) {
         await Firebase.initializeApp();

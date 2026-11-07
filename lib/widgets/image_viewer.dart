@@ -1,12 +1,15 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:gal/gal.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../core/ui.dart';
+import '../utils/gallery_saver.dart';
 
 class ImageViewer extends StatefulWidget {
   final String base64Image;
@@ -41,14 +44,12 @@ class _ImageViewerState extends State<ImageViewer> {
   Future<void> _download() async {
     setState(() => _isSaving = true);
     try {
-      // Request permission if needed
-      final hasAccess = await Gal.hasAccess();
-      if (!hasAccess) {
-        await Gal.requestAccess();
-      }
-      await Gal.putImageBytes(_bytes);
+      final dest = await GallerySaver.saveImageBytes(_bytes);
       if (mounted) {
-        showToast('Saved', 'Image saved to gallery',
+        final isGallery =
+            !kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
+        final msg = isGallery ? 'Image saved to gallery' : 'Image saved to $dest';
+        showToast('Saved', msg,
             tone: ToastTone.success, duration: const Duration(seconds: 2));
       }
     } on GalException catch (e) {
@@ -70,7 +71,7 @@ class _ImageViewerState extends State<ImageViewer> {
     try {
       final tempDir = await getTemporaryDirectory();
       final fileName = 'privatelm_${DateTime.now().millisecondsSinceEpoch}.png';
-      final file = File('${tempDir.path}/$fileName');
+      final file = File(p.join(tempDir.path, fileName));
       await file.writeAsBytes(_bytes);
       await Share.shareXFiles(
         [XFile(file.path)],

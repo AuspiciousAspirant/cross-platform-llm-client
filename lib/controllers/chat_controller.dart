@@ -11,7 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:uuid/uuid.dart';
-import 'package:gal/gal.dart';
+import '../utils/gallery_saver.dart';
 import '../controllers/settings_controller.dart';
 import '../core/constants.dart';
 import '../core/ui.dart';
@@ -115,6 +115,10 @@ class ChatController extends GetxController {
   }
 
   Future<void> _initSpeech() async {
+    if (kIsWeb || !(Platform.isAndroid || Platform.isIOS || Platform.isMacOS)) {
+      sttAvailable.value = false;
+      return;
+    }
     try {
       sttAvailable.value = await _speech.initialize(
         onError: (_) => isListening.value = false,
@@ -130,6 +134,10 @@ class ChatController extends GetxController {
   }
 
   Future<void> toggleListening() async {
+    if (kIsWeb || !(Platform.isAndroid || Platform.isIOS || Platform.isMacOS)) {
+      sttAvailable.value = false;
+      return;
+    }
     try {
       if (isListening.value) {
         await _speech.stop();
@@ -544,22 +552,18 @@ class ChatController extends GetxController {
   Future<void> downloadLastBatch() async {
     if (lastBatchImagesBase64.isEmpty) return;
     try {
-      final hasAccess = await Gal.hasAccess();
-      if (!hasAccess) {
-        final granted = await Gal.requestAccess();
-        if (!granted) {
-          showToast(
-              'Permission Denied', 'Cannot save images without gallery access.',
-              tone: ToastTone.error);
-          return;
-        }
+      String lastSaved = '';
+      for (int i = 0; i < lastBatchImagesBase64.length; i++) {
+        final bytes = base64Decode(lastBatchImagesBase64[i]);
+        final name = 'privatelm_${DateTime.now().millisecondsSinceEpoch}_$i';
+        lastSaved = await GallerySaver.saveImageBytes(bytes, name: name);
       }
-      for (final base64 in lastBatchImagesBase64) {
-        await Gal.putImageBytes(base64Decode(base64));
-      }
-      showToast(
-          'Success', 'Saved ${lastBatchImagesBase64.length} images to gallery.',
-          tone: ToastTone.success);
+      final isGallery =
+          !kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
+      final msg = isGallery
+          ? 'Saved ${lastBatchImagesBase64.length} images to gallery.'
+          : 'Saved ${lastBatchImagesBase64.length} images to: $lastSaved';
+      showToast('Success', msg, tone: ToastTone.success);
       lastBatchImagesBase64.clear();
     } catch (e) {
       showToast('Error', 'Failed to save images: $e', tone: ToastTone.error);
