@@ -1,0 +1,141 @@
+---
+title: "Cross-Platform LAN-Distributed LLM Architecture & Plan"
+description: "Engineering execution roadmap to enable PrivateLM to run on PCs (Windows/Linux/macOS) and mobile devices (Android/iOS) while splitting model layers across devices over a Local Area Network (LAN)."
+author: "Antigravity & David"
+date: "2026-11-08"
+tags: ["LLM", "CrossPlatform", "Flutter", "DistributedInference", "llama.cpp", "RPC", "LAN"]
+---
+
+import { Callout, Steps, Step, Tabs, Tab, Card, Cards } from 'fumadocs-ui/components';
+
+# Cross-Platform LAN-Distributed LLM Client
+
+<Cards>
+  <Card title="Target Devices" description="PC (Windows, macOS, Linux) + Mobile (Android, iOS)" />
+  <Card title="Network Scope" description="Local Area Network (LAN) — 1–5ms ultra-low latency" />
+  <Card title="Core Engine" description="llama.cpp RPC backend (ggml-rpc) on port 50052" />
+  <Card title="Interface" description="Responsive Flutter 3.x with adaptive split-pane desktop workstation" />
+</Cards>
+
+---
+
+## 1. Executive Architecture
+
+PrivateLM 1.0.7-cluster demonstrated phone-to-phone model splitting over Wi-Fi. Our objective is to make **PC a first-class participant** in the cluster—both as a **Master** (loading 14B–70B models and driving inference) and as an **in-app Worker** (accelerating mobile inference with PC GPUs).
+
+```mermaid
+flowchart TD
+    subgraph LAN ["Local Area Network (Home / Office Wi-Fi & Ethernet)"]
+        direction TB
+
+        subgraph MasterOptions ["Master Node Options (Loads Model & Drives Inference)"]
+            PCMaster["🖥️ PC Master (Windows/Mac/Linux)<br>• Recommended: High RAM, fast NVMe, GPU<br>• Runs UI, distributes layers over LAN"]
+            PhoneMaster["📱 Android Phone Master<br>• Runs on-device UI<br>• Distributes layers over LAN"]
+        end
+
+        subgraph WorkerNodes ["Worker Nodes (Run RPC Server on Port 50052)"]
+            PCWorker["🖥️ PC Worker (Windows / Linux / Mac)<br>• Fast GPU/CPU offload<br>• Listens on LAN IP:50052"]
+            PhoneWorker["📱 Mobile Worker (Android / iOS)<br>• Vulkan / Metal GPU offload<br>• Listens on LAN IP:50052"]
+        end
+
+        PCMaster <== "1–5ms LAN RPC (Port 50052)" ==> PhoneWorker
+        PCMaster <== "1–5ms LAN RPC (Port 50052)" ==> PCWorker
+        PhoneMaster <== "1–5ms LAN RPC (Port 50052)" ==> PCWorker
+        PhoneMaster <== "1–5ms LAN RPC (Port 50052)" ==> PhoneWorker
+    end
+```
+
+---
+
+## 2. Tooling, MCPs & Skills Ecosystem
+
+The following MCP servers and developer skills have been configured in `.agents/` to accelerate implementation and UI refinement:
+
+| Tool / Skill | Source | Primary Responsibility |
+| :--- | :--- | :--- |
+| **`playwright` MCP** | `@playwright/mcp` | Automated browser and layout verification, taking snapshots and checking visual fidelity across desktop and mobile aspect ratios. |
+| **`context7` MCP** | `mcp.context7.com` | Resolves up-to-date documentation and API references for Flutter plugins, Dart FFI, and llama.cpp. |
+| **`firecrawl` MCP** | `firecrawl-mcp` | Fast web crawling and scraping for latest llama.cpp RPC commits and Flutter desktop guides. |
+| **`frontend-design` Skill** | `.agents/skills/frontend-design` | Directs anti-slop visual planning, custom palettes, high-craft typography, and responsive grid layouts. |
+| **`taste-skill` Skill** | `.agents/skills/taste-skill` | Enforces visual discipline, bespoke design archetypes (Technical & Command), and WCAG accessibility. |
+
+---
+
+## 3. Step-by-Step Implementation Roadmap
+
+<Steps>
+
+<Step>
+### Step 1: Scaffolding Desktop & Isolating Mobile Dependencies [COMPLETED]
+
+Isolate mobile-only plugins behind abstract Dart interfaces so the app compiles cleanly on Windows, Linux, and macOS without runtime or compile errors:
+
+- **Desktop Scaffolding**: Added official Windows platform runner files under `windows/` (`CMakeLists.txt`, `win32_window`, `flutter_window`, `Runner.rc`, high-DPI manifest).
+- **Path Normalization**: In `download_native.dart` & `image_viewer.dart`, replaced POSIX-only `.split('/')` with `path.basename` (from `package:path`) to eliminate file corruption on Windows backslashes.
+- **Dependency Guarding**:
+  - `mobile_scanner`: Desktop routes to manual IP address entry; mobile retains camera scanning.
+  - `speech_to_text`: Gracefully guarded on desktop (`Platform.isAndroid || Platform.isIOS || Platform.isMacOS`).
+  - `gal`: Created `GallerySaver` (`lib/utils/gallery_saver.dart`) saving directly to user's `Pictures` directory on Windows/Linux via `path_provider` + Dart `File`.
+  - `firebase_*` & `flutter_background_service`: Initialized conditionally only on Android/iOS.
+  - Native Win32 Memory Detection: Implemented `GlobalMemoryStatusEx` via `dart:ffi` in `device_info_native.dart` for sub-millisecond RAM calculation on Windows.
+</Step>
+
+<Step>
+### Step 2: One-Click PC Worker Mode [COMPLETED]
+
+Allow any PC (Windows, macOS, Linux) to lend its CPU/GPU to the cluster with a single click:
+
+- Created `DesktopRpcWorker` (`lib/services/desktop_rpc_worker.dart`) subprocess supervisor.
+- Automatic binary discovery across `bin/`, application directory, and system `PATH`.
+- One-click GitHub release downloader fetching official `llama.cpp` pre-built binaries and unpacking required DLLs.
+- Real-time LAN IPv4 detection filtering out virtual adapters (WSL, Hyper-V, Docker).
+- High-performance background `Isolate` memory bandwidth benchmark (`benchmark()`) reporting GB/s.
+- Integrated into `ClusterService` & `ClusterView` with clipboard copy and live connection state.
+</Step>
+
+<Step>
+### Step 3: PC Master Mode & Dynamic Layer Allocator [COMPLETED]
+
+Allow the PC to act as the primary cluster orchestrator:
+
+- Enabled `ClusterService.canBeMaster = true` and `supportsLocalInference = true` on Windows, Linux, and macOS.
+- Created `DesktopInferenceEngine` (`lib/services/desktop_inference_engine.dart`) managing `llama-server` with `--rpc <worker1:port>,<worker2:port>`.
+- Full OpenAI-compatible SSE streaming (`/v1/chat/completions`) streaming tokens into the desktop chat UI.
+- Multimodal vision support via `--mmproj <path>` and Base64 data URI injection.
+- Slot cancellation via `POST /slots/0?action=cancel` for instant aborts without lingering VRAM locks.
+- Seamlessly hooked into `InferenceEngine` (`lib/services/inference_android.dart`) and `InferenceService`.
+</Step>
+
+<Step>
+### Step 4: Responsive Desktop UI & Workstation Experience [COMPLETED]
+
+Elevate the interface from a stretched phone layout to a polished desktop AI workstation:
+
+- **Collapsible Sidebar Navigation**: Activates in `home_view.dart` when `width >= 800px` with branded header, hover tooltips, and active indicator pills.
+- **Docked Split-Pane Chat View**: In `chat_view.dart` (`width >= 900px`), displays a permanent 280px drawer on the left and active chat pane on the right.
+- **Anti-Slop Centered Reading Comfort**: Constrains message bubbles and view bodies (`maxWidth: 860px` centered) across Chat, Models, Server, Task, and Settings views.
+- **Desktop Interactions**: Mouse right-click conversation deletion, copy-to-clipboard badges, and responsive action sheets.
+</Step>
+
+<Step>
+### Step 5: LAN Cluster Verification & Stress Testing [ACTIVE]
+
+Validate distributed execution across mixed hardware:
+
+- **Phone Master ➔ PC Worker**: Android master offloading layers to a Windows PC worker over Wi-Fi on port 50052.
+- **PC Master ➔ Phone Worker**: PC master offloading layers to phone/tablet workers over LAN.
+- **Benchmark & Throughput**: Measure token generation speed (tok/sec) on single device vs distributed LAN cluster.
+</Step>
+
+</Steps>
+
+---
+
+## 4. Hardware Sizing Guide for LAN Clusters
+
+| Model Size | Quantization | Combined RAM/VRAM Needed | Recommended LAN Cluster Setup |
+| :--- | :---: | :---: | :--- |
+| **8B (Llama 3.1, Gemma 2)** | Q4_K_M | ~5.5 GB | 1 Phone (Master) or 1 PC |
+| **14B (Qwen 2.5 14B)** | Q4_K_M | ~9.5 GB | 1 PC (8 GB VRAM) + 1 Phone (4 GB free) |
+| **27B (Gemma 2 27B)** | IQ2_M / Q3_K_M | ~12–16 GB | 1 PC Master (16 GB RAM) + 1–2 Mobile Workers |
+| **70B (Llama 3.3 70B)** | IQ2_XS / Q4_K_M | ~28–42 GB | 1 High-RAM PC Master + 2–3 Distributed Devices |
