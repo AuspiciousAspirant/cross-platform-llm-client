@@ -1,0 +1,70 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ]
+    },
+    "firecrawl": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "firecrawl-mcp"
+      ],
+      "env": {
+        "FIRECRAWL_API_KEY": ""
+      }
+    },
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase"
+      ]
+    },
+    "vercel": {
+      "url": "https://mcp.vercel.com"
+    },
+    "context7": {
+      "url": "https://mcp.context7.com/mcp"
+    },
+    "n8n": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@automatelab/n8n-mcp"
+      ]
+    },
+    "next-dev-loop": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "next-devtools-mcp"
+      ]
+    },
+    "node-package-manager": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "npm-mcp"
+      ]
+    },
+    "cache-components": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-cache-tools"
+      ]
+    },
+    "google_workspace": {
+      "command": "uvx",
+      "args": [
+        "workspace-mcp",
+        "--single-user"
+      ]
+    }
+  }
+}
+
