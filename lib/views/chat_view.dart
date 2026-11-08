@@ -578,12 +578,15 @@ class ChatView extends GetView<ChatController> {
     });
   }
 
-  // ── Cluster Worker Drop Banner ──
+  // ── Cluster Worker Drop Fallback Banner ──
   Widget _workerDropBanner(BuildContext context, bool isDark) {
+    if (!Get.isRegistered<ClusterService>()) return const SizedBox.shrink();
+    final cluster = Get.find<ClusterService>();
+
     return Obx(() {
-      final cluster = Get.find<ClusterService>();
       if (cluster.droppedWorkers.isEmpty) return const SizedBox.shrink();
       final droppedList = cluster.droppedWorkers.join(', ');
+
       return Align(
         alignment: Alignment.center,
         child: ConstrainedBox(
@@ -594,7 +597,7 @@ class ChatView extends GetView<ChatController> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: const Color(0xFFFF9500)
-                  .withValues(alpha: isDark ? 0.12 : 0.08),
+                  .withValues(alpha: isDark ? 0.14 : 0.08),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: const Color(0xFFFF9500)
@@ -604,12 +607,15 @@ class ChatView extends GetView<ChatController> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.warning_amber_rounded,
-                    size: 20, color: Color(0xFFFF9500)),
+                const Icon(
+                  Icons.warning_amber_rounded,
+                  size: 20,
+                  color: Color(0xFFFF9500),
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Cluster worker unreachable ($droppedList). LAN inference degraded.',
+                    'Cluster worker unreachable ($droppedList). Generation may be degraded.',
                     style: GoogleFonts.inter(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
@@ -617,36 +623,8 @@ class ChatView extends GetView<ChatController> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                TextButton(
-                  onPressed: () async {
-                    Haptics.selectionClick();
-                    final ok = await cluster.fallbackToLocal();
-                    if (ok) {
-                      showToast('Cluster Recovered',
-                          'Model reloaded on local device.',
-                          tone: ToastTone.success);
-                    }
-                  },
-                  style: TextButton.styleFrom(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    backgroundColor:
-                        const Color(0xFFFF9500).withValues(alpha: 0.2),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    minimumSize: const Size(0, 32),
-                  ),
-                  child: Text(
-                    'Fallback to Local',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFFFF9500),
-                    ),
-                  ),
-                ),
+                const SizedBox(width: 10),
+                _ClusterFallbackButton(cluster: cluster, isDark: isDark),
               ],
             ),
           ),
@@ -657,8 +635,10 @@ class ChatView extends GetView<ChatController> {
 
   // ── Cluster Telemetry Pill in AppBar ──
   Widget _clusterTelemetryPill(BuildContext context, bool isDark) {
+    if (!Get.isRegistered<ClusterService>()) return const SizedBox.shrink();
+    final cluster = Get.find<ClusterService>();
+
     return Obx(() {
-      final cluster = Get.find<ClusterService>();
       if (cluster.split.isEmpty) return const SizedBox.shrink();
       final inf = Get.find<InferenceService>();
       final tokPerSec = inf.tokensPerSecond.value;
@@ -666,23 +646,25 @@ class ChatView extends GetView<ChatController> {
       final isHealthy = cluster.isClusterHealthy.value;
       final nodeCount = cluster.split.length;
 
-      final Color statusColor;
+      final Color dotColor;
       if (!isHealthy) {
-        statusColor = const Color(0xFFFF3B30);
+        dotColor = const Color(0xFFFF3B30); // Red
       } else if (latency > 75) {
-        statusColor = const Color(0xFFFF9500);
+        dotColor = const Color(0xFFFF9500); // Amber
       } else {
-        statusColor = const Color(0xFF34C759);
+        dotColor = const Color(0xFF34C759); // Green
       }
 
-      final label = tokPerSec > 0
+      final speedText = tokPerSec > 0
           ? '${tokPerSec.toStringAsFixed(1)} tok/s'
-          : '$nodeCount Nodes';
+          : 'Ready';
+      final latencyText = latency > 0 ? ' · ${latency}ms' : '';
+      final pillText = '⚡ $nodeCount Nodes · $speedText$latencyText';
 
       return Padding(
         padding: const EdgeInsets.only(right: 6),
         child: Tooltip(
-          message: 'Inspect LAN Cluster Topology ($nodeCount nodes)',
+          message: 'Inspect LAN Cluster Topology',
           child: Material(
             color: Colors.transparent,
             child: InkWell(
@@ -693,7 +675,7 @@ class ChatView extends GetView<ChatController> {
               borderRadius: BorderRadius.circular(14),
               child: Container(
                 height: 28,
-                padding: const EdgeInsets.symmetric(horizontal: 9),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
                 decoration: BoxDecoration(
                   color: isDark
                       ? const Color(0xFF161618)
@@ -713,33 +695,20 @@ class ChatView extends GetView<ChatController> {
                       width: 6,
                       height: 6,
                       decoration: BoxDecoration(
-                        color: statusColor,
+                        color: dotColor,
                         shape: BoxShape.circle,
                       ),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 7),
                     Text(
-                      label,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: -0.2,
-                        color: isDark ? Colors.white : Colors.black,
+                      pillText,
+                      style: GoogleFonts.firaCode(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        color: isDark ? Colors.white : const Color(0xFF0B0B0C),
                         fontFeatures: const [FontFeature.tabularFigures()],
                       ),
                     ),
-                    if (latency > 0) ...[
-                      const SizedBox(width: 4),
-                      Text(
-                        '· ${latency}ms',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w400,
-                          color: Theme.of(context).hintColor,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -750,8 +719,9 @@ class ChatView extends GetView<ChatController> {
     });
   }
 
-  // ── Cluster Topology Sheet ──
+  // ── Cluster Topology Inspector Modal ──
   void _showClusterTopologySheet(BuildContext context) {
+    if (!Get.isRegistered<ClusterService>()) return;
     Haptics.selectionClick();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cluster = Get.find<ClusterService>();
@@ -760,15 +730,15 @@ class ChatView extends GetView<ChatController> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: isDark ? const Color(0xFF161618) : Colors.white,
+      backgroundColor: isDark ? const Color(0xFF141416) : Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => SafeArea(
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
-            maxWidth: 640,
+            maxHeight: MediaQuery.sizeOf(ctx).height * 0.88,
+            maxWidth: 860,
           ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
@@ -776,12 +746,21 @@ class ChatView extends GetView<ChatController> {
               final shares = cluster.split;
               final text = isDark ? Colors.white : const Color(0xFF0B0B0C);
               final muted = Theme.of(ctx).hintColor;
+              final borderCol = isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.black.withValues(alpha: 0.06);
+              final cardBg = isDark
+                  ? const Color(0xFF1C1C1E)
+                  : const Color(0xFFF7F7F8);
               final totalMb = shares.fold<double>(0, (a, s) => a + s.mb);
+              final nodeCount = shares.length;
+              final isHealthy = cluster.isClusterHealthy.value;
 
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Handle pill
                   Center(
                     child: Container(
                       width: 36,
@@ -792,43 +771,57 @@ class ChatView extends GetView<ChatController> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 16),
+
+                  // Title + Node Count Badge + Health Status
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      Row(
                         children: [
                           Text(
-                            'Cluster Topology & Telemetry',
+                            'Cluster Topology & LAN Telemetry',
                             style: GoogleFonts.inter(
-                              fontSize: 18,
+                              fontSize: 17,
                               fontWeight: FontWeight.w700,
-                              letterSpacing: -0.4,
+                              letterSpacing: -0.3,
                               color: text,
                             ),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'LAN Model Distribution · Port 50052',
-                            style: GoogleFonts.inter(
-                              fontSize: 12.5,
-                              color: muted,
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: _appleBlue(ctx).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: _appleBlue(ctx).withValues(alpha: 0.25),
+                                width: 0.5,
+                              ),
+                            ),
+                            child: Text(
+                              '$nodeCount ${nodeCount == 1 ? "Node" : "Nodes"}',
+                              style: GoogleFonts.inter(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: _appleBlue(ctx),
+                              ),
                             ),
                           ),
                         ],
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
+                            horizontal: 9, vertical: 4),
                         decoration: BoxDecoration(
-                          color: (cluster.isClusterHealthy.value
+                          color: (isHealthy
                                   ? const Color(0xFF34C759)
                                   : const Color(0xFFFF3B30))
                               .withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: (cluster.isClusterHealthy.value
+                            color: (isHealthy
                                     ? const Color(0xFF34C759)
                                     : const Color(0xFFFF3B30))
                                 .withValues(alpha: 0.25),
@@ -843,20 +836,18 @@ class ChatView extends GetView<ChatController> {
                               height: 6,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: cluster.isClusterHealthy.value
+                                color: isHealthy
                                     ? const Color(0xFF34C759)
                                     : const Color(0xFFFF3B30),
                               ),
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              cluster.isClusterHealthy.value
-                                  ? '${shares.length} Nodes Active'
-                                  : 'Degraded',
+                              isHealthy ? 'Healthy' : 'Degraded',
                               style: GoogleFonts.inter(
-                                fontSize: 12,
+                                fontSize: 11.5,
                                 fontWeight: FontWeight.w600,
-                                color: cluster.isClusterHealthy.value
+                                color: isHealthy
                                     ? const Color(0xFF34C759)
                                     : const Color(0xFFFF3B30),
                               ),
@@ -866,210 +857,108 @@ class ChatView extends GetView<ChatController> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
-                  // Pipeline Node Cards
-                  Flexible(
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: shares.length,
-                      separatorBuilder: (_, __) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Center(
-                          child: Icon(
-                            Icons.arrow_downward_rounded,
-                            size: 16,
-                            color: muted.withValues(alpha: 0.4),
-                          ),
-                        ),
-                      ),
-                      itemBuilder: (_, i) {
-                        final s = shares[i];
-                        final pct = totalMb > 0
-                            ? (s.mb / totalMb * 100).round()
-                            : 0;
-                        final layerSpan =
-                            'Layers ${s.startLayer}–${s.endLayer}';
-                        final ping = s.isThisPhone
-                            ? 'Local Master'
-                            : (s.pingMs != null ? '${s.pingMs}ms' : 'Offline');
-                        final isOnline = s.isHealthy &&
-                            (s.isThisPhone || s.pingMs != null);
-
-                        return Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? const Color(0xFF1E1E22)
-                                : const Color(0xFFF7F7F8),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: isDark
-                                  ? Colors.white.withValues(alpha: 0.08)
-                                  : Colors.black.withValues(alpha: 0.06),
-                              width: 0.5,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: isDark
-                                      ? Colors.white.withValues(alpha: 0.06)
-                                      : Colors.black.withValues(alpha: 0.04),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  s.isThisPhone
-                                      ? Icons.computer_rounded
-                                      : Icons.smartphone_rounded,
-                                  size: 20,
-                                  color: s.isThisPhone
-                                      ? const Color(0xFF0A84FF)
-                                      : const Color(0xFF34C759),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Text(
-                                          s.name,
-                                          style: GoogleFonts.inter(
-                                            fontSize: 14.5,
-                                            fontWeight: FontWeight.w600,
-                                            color: text,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 6, vertical: 1),
-                                          decoration: BoxDecoration(
-                                            color: (s.isThisPhone
-                                                    ? const Color(0xFF0A84FF)
-                                                    : const Color(0xFF8E8E93))
-                                                .withValues(alpha: 0.15),
-                                            borderRadius:
-                                                BorderRadius.circular(6),
-                                          ),
-                                          child: Text(
-                                            s.isThisPhone ? 'Master' : 'Worker',
-                                            style: GoogleFonts.inter(
-                                              fontSize: 10.5,
-                                              fontWeight: FontWeight.w600,
-                                              color: s.isThisPhone
-                                                  ? const Color(0xFF0A84FF)
-                                                  : muted,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      '$layerSpan · ${_fmtMb(s.mb)} ($pct%)',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 12.5,
-                                        color: muted,
-                                        fontFeatures: const [
-                                          FontFeature.tabularFigures()
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Container(
-                                        width: 6,
-                                        height: 6,
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          color: isOnline
-                                              ? const Color(0xFF34C759)
-                                              : const Color(0xFFFF3B30),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 5),
-                                      Text(
-                                        ping,
-                                        style: GoogleFonts.inter(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: isOnline
-                                              ? (isDark
-                                                  ? Colors.white
-                                                  : Colors.black)
-                                              : const Color(0xFFFF3B30),
-                                          fontFeatures: const [
-                                            FontFeature.tabularFigures()
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  if (s.endpoint.isNotEmpty) ...[
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      s.endpoint,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 11,
-                                        color: muted.withValues(alpha: 0.8),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Real-time tensor distribution & layer pipeline across local network',
+                    style: GoogleFonts.inter(fontSize: 12.5, color: muted),
                   ),
                   const SizedBox(height: 18),
-                  // Summary metrics footer
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.04)
-                          : Colors.black.withValues(alpha: 0.02),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+
+                  // Pipeline Visualizer (Horizontal execution order)
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        _summaryMetric(
-                          'Generation Speed',
-                          inf.tokensPerSecond.value > 0
-                              ? '${inf.tokensPerSecond.value.toStringAsFixed(1)} t/s'
-                              : 'Idle',
-                          isDark,
-                        ),
-                        _summaryMetric(
-                          'Cluster Latency',
-                          cluster.clusterLatencyMs.value > 0
-                              ? '${cluster.clusterLatencyMs.value}ms'
-                              : '1ms',
-                          isDark,
-                        ),
-                        _summaryMetric(
-                          'Total Memory',
-                          _fmtMb(totalMb),
-                          isDark,
-                        ),
+                        for (int i = 0; i < shares.length; i++) ...[
+                          _buildPipelineNodeCard(
+                            ctx,
+                            shares[i],
+                            index: i + 1,
+                            totalMb: totalMb,
+                            isDark: isDark,
+                            cardBg: cardBg,
+                            borderCol: borderCol,
+                            text: text,
+                            muted: muted,
+                          ),
+                          if (i < shares.length - 1)
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 10),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.arrow_forward_rounded,
+                                    size: 18,
+                                    color: muted.withValues(alpha: 0.6),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'RPC',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: muted.withValues(alpha: 0.6),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
                       ],
                     ),
+                  ),
+
+                  const SizedBox(height: 20),
+                  Divider(height: 0.5, thickness: 0.5, color: borderCol),
+                  const SizedBox(height: 16),
+
+                  // Footer Metrics Row
+                  Row(
+                    children: [
+                      // Metric 1: Live Speed
+                      _buildFooterMetric(
+                        ctx,
+                        label: 'Generation Speed',
+                        value: inf.tokensPerSecond.value > 0
+                            ? '${inf.tokensPerSecond.value.toStringAsFixed(1)} tok/s'
+                            : 'Idle',
+                        icon: Icons.speed_rounded,
+                        text: text,
+                        muted: muted,
+                      ),
+                      const SizedBox(width: 20),
+
+                      // Metric 2: Combined Memory
+                      _buildFooterMetric(
+                        ctx,
+                        label: 'Cluster Memory',
+                        value: _fmtMb(totalMb),
+                        icon: Icons.memory_rounded,
+                        text: text,
+                        muted: muted,
+                      ),
+                      const SizedBox(width: 20),
+
+                      // Metric 3: Roundtrip Ping
+                      _buildFooterMetric(
+                        ctx,
+                        label: 'Network Roundtrip',
+                        value: cluster.clusterLatencyMs.value > 0
+                            ? '${cluster.clusterLatencyMs.value}ms avg'
+                            : (shares.length <= 1 ? '0ms (Local)' : '<1ms'),
+                        icon: Icons.network_ping_rounded,
+                        text: text,
+                        muted: muted,
+                      ),
+                      const Spacer(),
+
+                      // Action: Re-test Pings button
+                      _RetestPingsButton(cluster: cluster, isDark: isDark),
+                    ],
                   ),
                 ],
               );
@@ -1080,24 +969,237 @@ class ChatView extends GetView<ChatController> {
     );
   }
 
-  static Widget _summaryMetric(String label, String value, bool isDark) {
+  Widget _buildPipelineNodeCard(
+    BuildContext context,
+    ClusterShare share, {
+    required int index,
+    required double totalMb,
+    required bool isDark,
+    required Color cardBg,
+    required Color borderCol,
+    required Color text,
+    required Color muted,
+  }) {
+    final pct = totalMb > 0 ? (share.mb / totalMb * 100).round() : 0;
+    final isMaster = share.isThisPhone;
+
+    // Ping status
+    final Color pingColor;
+    final String pingLabel;
+    if (isMaster) {
+      pingColor = const Color(0xFF34C759);
+      pingLabel = 'Local (0ms)';
+    } else if (share.pingMs != null && share.isHealthy) {
+      pingColor = share.pingMs! > 75
+          ? const Color(0xFFFF9500)
+          : const Color(0xFF34C759);
+      pingLabel = '${share.pingMs}ms';
+    } else {
+      pingColor = const Color(0xFFFF3B30);
+      pingLabel = 'Offline';
+    }
+
+    final layerText = (share.startLayer != 0 || share.endLayer != 0)
+        ? 'Layers ${share.startLayer}–${share.endLayer}'
+        : (isMaster ? 'Root & Master Layers' : 'Offloaded Layers');
+
+    final endpointText = share.endpoint.isNotEmpty
+        ? share.endpoint
+        : (isMaster ? 'Local Host' : '127.0.0.1:50052');
+
+    return Container(
+      width: 235,
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: !share.isHealthy && !isMaster
+              ? const Color(0xFFFF3B30).withValues(alpha: 0.45)
+              : borderCol,
+          width: 0.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Top Row: Node Name + Role Badge
+          Row(
+            children: [
+              Icon(
+                isMaster
+                    ? (Platform.isAndroid || Platform.isIOS
+                        ? Icons.smartphone_rounded
+                        : Icons.computer_rounded)
+                    : Icons.dns_rounded,
+                size: 16,
+                color: isMaster ? _appleBlue(context) : muted,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  share.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: text,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: (isMaster ? _appleBlue(context) : muted)
+                      .withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  isMaster ? 'Master' : 'Worker',
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: isMaster ? _appleBlue(context) : muted,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Assigned layers
+          Row(
+            children: [
+              Icon(Icons.layers_outlined, size: 14, color: muted),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  layerText,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: text,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+
+          // Memory share
+          Row(
+            children: [
+              Icon(Icons.pie_chart_outline_rounded, size: 14, color: muted),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '${_fmtMb(share.mb)} ($pct%)',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: muted,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Endpoint & LAN Ping Badge
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  endpointText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.firaCode(
+                    fontSize: 10.5,
+                    color: muted.withValues(alpha: 0.8),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: pingColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: pingColor.withValues(alpha: 0.25),
+                    width: 0.5,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 5,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: pingColor,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      pingLabel,
+                      style: GoogleFonts.firaCode(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w500,
+                        color: pingColor,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFooterMetric(
+    BuildContext context, {
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color text,
+    required Color muted,
+  }) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 13, color: muted),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                color: muted,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 3),
         Text(
           value,
-          style: GoogleFonts.inter(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: isDark ? Colors.white : Colors.black,
+          style: GoogleFonts.firaCode(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: text,
             fontFeatures: const [FontFeature.tabularFigures()],
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 11,
-            color: const Color(0xFF8E8E93),
           ),
         ),
       ],
@@ -2408,5 +2510,138 @@ class _BlinkingCursorState extends State<_BlinkingCursor>
                 decoration: BoxDecoration(
                     color: widget.color,
                     borderRadius: BorderRadius.circular(1)))));
+  }
+}
+
+class _ClusterFallbackButton extends StatefulWidget {
+  final ClusterService cluster;
+  final bool isDark;
+
+  const _ClusterFallbackButton({required this.cluster, required this.isDark});
+
+  @override
+  State<_ClusterFallbackButton> createState() => _ClusterFallbackButtonState();
+}
+
+class _ClusterFallbackButtonState extends State<_ClusterFallbackButton> {
+  bool _isLoading = false;
+
+  Future<void> _handleFallback() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+    Haptics.mediumImpact();
+    final ok = await widget.cluster.fallbackToLocal();
+    if (mounted) {
+      setState(() => _isLoading = false);
+      if (ok) {
+        showToast('Cluster Recovered', 'Switched to local execution on master.',
+            tone: ToastTone.success);
+      } else {
+        showToast('Fallback failed', 'Could not reload model locally.',
+            tone: ToastTone.error);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFFF9500)
+          .withValues(alpha: widget.isDark ? 0.22 : 0.15),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: _isLoading ? null : _handleFallback,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_isLoading) ...[
+                const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Color(0xFFFF9500),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                'Fallback to Local',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFFFF9500),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RetestPingsButton extends StatefulWidget {
+  final ClusterService cluster;
+  final bool isDark;
+
+  const _RetestPingsButton({required this.cluster, required this.isDark});
+
+  @override
+  State<_RetestPingsButton> createState() => _RetestPingsButtonState();
+}
+
+class _RetestPingsButtonState extends State<_RetestPingsButton> {
+  bool _isTesting = false;
+
+  Future<void> _handleRetest() async {
+    if (_isTesting) return;
+    setState(() => _isTesting = true);
+    Haptics.selectionClick();
+    await widget.cluster.retestPings();
+    if (mounted) setState(() => _isTesting = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: widget.isDark
+          ? Colors.white.withValues(alpha: 0.08)
+          : Colors.black.withValues(alpha: 0.06),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: _isTesting ? null : _handleRetest,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedRotation(
+                turns: _isTesting ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 600),
+                child: Icon(
+                  Icons.refresh_rounded,
+                  size: 15,
+                  color: Theme.of(context).hintColor,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Re-test Pings',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: widget.isDark ? Colors.white : const Color(0xFF0B0B0C),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
