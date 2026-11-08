@@ -123,13 +123,9 @@ $appSoCandidates = @(
 )
 foreach ($so in $appSoCandidates) {
     if (Test-Path $so) {
-        if (-not (Test-Path "$distDir\data\app.so")) {
-            Copy-Item -Path $so -Destination "$distDir\data\app.so" -Force
-        }
-        if (-not (Test-Path "$buildOutput\data\app.so")) {
-            Copy-Item -Path $so -Destination "$buildOutput\data\app.so" -Force
-        }
-        Write-Host "-> Verified Release AOT library (app.so) in bundle data/ directory." -ForegroundColor Green
+        Copy-Item -Path $so -Destination "$distDir\data\app.so" -Force
+        Copy-Item -Path $so -Destination "$buildOutput\data\app.so" -Force
+        Write-Host "-> Updated Release AOT library (app.so) in bundle data/ directory." -ForegroundColor Green
         break
     }
 }
