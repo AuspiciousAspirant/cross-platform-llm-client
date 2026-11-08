@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
+import 'package:path/path.dart' as p;
 import '../services/download_service.dart';
 import '../services/gguf_metadata.dart';
 import '../services/inference_service.dart';
@@ -44,6 +46,47 @@ class ModelController extends GetxController {
 
   final availableModels = <AiModel>[].obs;
   final downloadedFiles = <String>[].obs;
+
+  /// Direct external model paths on desktop SSD (zero-copy linking).
+  final RxMap<String, String> externalModelPaths = <String, String>{}.obs;
+
+  static bool get isDesktop =>
+      !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+
+  String? get customModelsDirectory =>
+      _hive.getSetting<String>(AppConstants.keyCustomModelsDirectory);
+
+  bool isModelLinked(String filename) =>
+      externalModelPaths.containsKey(filename);
+
+  String? getExternalPath(String filename) => externalModelPaths[filename];
+
+  Future<String> modelPath(String filename) async {
+    if (externalModelPaths.containsKey(filename)) {
+      final externalPath = externalModelPaths[filename]!;
+      if (File(externalPath).existsSync()) {
+        return externalPath;
+      }
+    }
+    return await _download.modelPath(filename);
+  }
+
+  void _loadExternalModelPaths() {
+    final raw = _hive.getSetting<Map>(AppConstants.keyExternalModelPaths) ??
+        _hive.getSetting<Map>('external_model_paths');
+    if (raw != null) {
+      externalModelPaths.value = Map<String, String>.from(
+        raw.map((k, v) => MapEntry(k.toString(), v.toString())),
+      );
+    }
+  }
+
+  Future<void> _saveExternalModelPaths() async {
+    await _hive.setSetting(
+      AppConstants.keyExternalModelPaths,
+      Map<String, String>.from(externalModelPaths),
+    );
+  }
 
   /// Vision projector (mmproj) files on disk. They're hidden from the model
   /// list but tell us whether a vision model can read images yet.
@@ -138,6 +181,7 @@ class ModelController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    _loadExternalModelPaths();
     _loadCustomModels();
     availableModels.value = AppConstants.availableModels
         .map((m) => AiModel.fromMap(m))
@@ -172,8 +216,34 @@ class ModelController extends GetxController {
       ..addAll(allFiles.where(_isVisionProjectorFile));
     final files =
         allFiles.where((file) => !_isAuxiliaryImageFile(file)).toList();
+
+    // Reconcile external direct-linked models
+    final missingExternal = <String>[];
+    for (final entry in externalModelPaths.entries) {
+      final file = File(entry.value);
+      if (file.existsSync()) {
+        final filename = entry.key;
+        if (_isVisionProjectorFile(filename)) {
+          visionFiles.add(filename);
+        } else if (!_isAuxiliaryImageFile(filename)) {
+          if (!files.contains(filename)) {
+            files.add(filename);
+          }
+          fileSizes[filename] = file.lengthSync();
+        }
+      } else {
+        missingExternal.add(entry.key);
+      }
+    }
+    if (missingExternal.isNotEmpty) {
+      for (final key in missingExternal) {
+        externalModelPaths.remove(key);
+      }
+      await _saveExternalModelPaths();
+    }
+
     downloadedFiles.value = files;
-    for (final file in files) {
+    for (final file in allFiles.where((f) => !_isAuxiliaryImageFile(f))) {
       fileSizes[file] = await _download.getModelSize(file);
     }
 
@@ -205,12 +275,17 @@ class ModelController extends GetxController {
         final isLiteRt = runtime == AiModel.runtimeLiteRt;
         final isVision = isLiteRt && AiModel.hasVisionMarker(lower);
 
+        final isLinked = externalModelPaths.containsKey(file);
+        final externalPath = externalModelPaths[file];
+
         availableModels.add(AiModel(
-          name: file,
+          name: _cleanModelDisplayName(file),
           filename: file,
           url: '',
           size: _formatModelSize(file),
-          description: 'Imported from local storage',
+          description: isLinked
+              ? 'Direct link · $externalPath'
+              : 'Imported from local storage',
           template: isLiteRt ? 'litert' : 'chatml',
           runtime: runtime,
           isImported: true,
@@ -229,6 +304,10 @@ class ModelController extends GetxController {
   }
 
   bool isDownloaded(String filename) {
+    if (externalModelPaths.containsKey(filename) &&
+        File(externalModelPaths[filename]!).existsSync()) {
+      return true;
+    }
     if (filename.toLowerCase().endsWith('.zip')) {
       return downloadedFiles
           .contains(filename.substring(0, filename.length - 4));
@@ -444,7 +523,7 @@ class ModelController extends GetxController {
     for (final name in files) {
       if (activeDownloads.containsKey('save:$name')) continue;
       try {
-        final path = await _download.modelPath(name);
+        final path = await modelPath(name);
         final result = await _androidImportChannel.invokeMethod<String>(
             'saveToDownloads', {'path': path, 'name': name});
         if (result != null) saved.add(result);
@@ -586,6 +665,11 @@ class ModelController extends GetxController {
       try {
         await _download.deleteModel(model.mmprojFilename);
       } catch (_) {}
+      externalModelPaths.remove(model.mmprojFilename);
+    }
+    if (externalModelPaths.containsKey(filename)) {
+      externalModelPaths.remove(filename);
+      await _saveExternalModelPaths();
     }
     await _download.deleteModel(filename);
     await refreshDownloaded();
@@ -601,7 +685,7 @@ class ModelController extends GetxController {
           tone: ToastTone.warning);
       return;
     }
-    final path = await _download.modelPath(filename);
+    final path = await modelPath(filename);
     final model =
         availableModels.firstWhereOrNull((m) => m.filename == filename);
     if (_isAuxiliaryImageFile(filename)) {
@@ -704,7 +788,7 @@ class ModelController extends GetxController {
         // Only hand sd.cpp a TAESD path that is fully on disk; a missing
         // file makes the whole model load fail on every backend.
         if (await _download.isModelDownloaded(taesdFilename)) {
-          taesdPath = await _download.modelPath(taesdFilename);
+          taesdPath = await modelPath(taesdFilename);
           print('[ModelController] Using TAESD for fast decode');
         } else {
           print('[ModelController] TAESD not ready yet, using standard VAE');
@@ -733,7 +817,7 @@ class ModelController extends GetxController {
       var visionNote = '';
       if (model != null && model.hasVisionProjector && !isLiteRt) {
         if (await _download.isModelDownloaded(model.mmprojFilename)) {
-          mmprojPath = await _download.modelPath(model.mmprojFilename);
+          mmprojPath = await modelPath(model.mmprojFilename);
         } else {
           visionNote = ' Vision file is still downloading, so images will '
               'work after you reload the model.';
@@ -1116,6 +1200,204 @@ class ModelController extends GetxController {
   Future<void> unloadModel() async {
     await _inference.unloadModel();
     await _localImage.unloadModel();
+  }
+
+  String _cleanModelDisplayName(String filename) {
+    return filename.replaceAll(
+        RegExp(r'\.(gguf|litertlm|safetensors)$', caseSensitive: false), '');
+  }
+
+  Future<void> _registerDirectModel({
+    required String path,
+    required String filename,
+    required int bytes,
+  }) async {
+    externalModelPaths[filename] = path;
+    fileSizes[filename] = bytes;
+
+    final known = _catalogVisionMatch(filename);
+    if (known != null) {
+      final model = known.copyWith(
+        filename: filename,
+        url: '',
+        size: DownloadService.formatBytes(bytes),
+        description: 'Direct link · $path',
+        isImported: true,
+      );
+      availableModels.removeWhere((m) => m.filename == filename);
+      availableModels.add(model);
+      return;
+    }
+
+    GgufInfo? ggufInfo;
+    final lower = filename.toLowerCase();
+    if (lower.endsWith('.gguf')) {
+      ggufInfo = await readGgufInfo(path);
+    }
+
+    final runtime = AiModel.runtimeFromFilename(filename);
+    final isLiteRt = runtime == AiModel.runtimeLiteRt;
+    final isVision = isLiteRt && AiModel.hasVisionMarker(lower);
+
+    String name = _cleanModelDisplayName(filename);
+    String description = 'Direct link from $path';
+
+    if (ggufInfo != null) {
+      if (ggufInfo.name != null && ggufInfo.name!.isNotEmpty) {
+        name = ggufInfo.name!;
+      }
+      final arch = ggufInfo.architecture.toUpperCase();
+      final ctx = ggufInfo.trainedContext;
+      description =
+          'Direct link · $arch · $ctx ctx · ${DownloadService.formatBytes(bytes)}';
+    }
+
+    final model = AiModel(
+      name: name,
+      filename: filename,
+      url: '',
+      size: DownloadService.formatBytes(bytes),
+      description: description,
+      template: isLiteRt ? 'litert' : 'chatml',
+      runtime: runtime,
+      isImported: true,
+      isVision: isVision,
+    );
+
+    availableModels.removeWhere((m) => m.filename == filename);
+    availableModels.add(model);
+  }
+
+  /// Direct zero-copy model linking for desktop environments (Windows, macOS, Linux).
+  /// Instantly adds the model without copying or duplicating disk storage.
+  Future<void> importModelDirectLink() async {
+    if (isImporting.value) {
+      showToast('Operation in Progress',
+          'Wait for the current operation to finish.',
+          tone: ToastTone.warning);
+      return;
+    }
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['gguf', 'litertlm', 'safetensors'],
+        allowMultiple: false,
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final picked = result.files.single;
+      final path = picked.path;
+      if (path == null || path.isEmpty) {
+        showToast('Linking Failed', 'Could not determine file path.',
+            tone: ToastTone.error);
+        return;
+      }
+
+      final file = File(path);
+      if (!await file.exists()) {
+        showToast('File Not Found', 'The selected file does not exist.',
+            tone: ToastTone.error);
+        return;
+      }
+
+      final filename = picked.name.isNotEmpty ? picked.name : p.basename(path);
+      final lower = filename.toLowerCase();
+      if (!lower.endsWith('.gguf') &&
+          !lower.endsWith('.litertlm') &&
+          !lower.endsWith('.safetensors')) {
+        showToast('Unsupported Model',
+            'Only .gguf, .litertlm, and .safetensors files can be linked.',
+            tone: ToastTone.warning);
+        return;
+      }
+
+      final bytes = await file.length();
+      if (bytes <= 0) {
+        showToast('Linking Failed', 'The selected file is empty.',
+            tone: ToastTone.error);
+        return;
+      }
+
+      await _registerDirectModel(path: path, filename: filename, bytes: bytes);
+      await _saveExternalModelPaths();
+      await refreshDownloaded();
+
+      modelScope.value = 'local';
+      showToast('Model Linked', 'Instantly ready to load: $filename',
+          tone: ToastTone.success);
+    } catch (e, stack) {
+      Get.find<AppLogService>()
+          .error('Direct model link failed', details: '$e\n$stack');
+      showToast('Link Failed', '$e', tone: ToastTone.error);
+    }
+  }
+
+  /// Scans a chosen or configured local directory for all *.gguf models and
+  /// registers them instantly via direct zero-copy linking.
+  Future<void> scanCustomModelFolder({String? directoryPath}) async {
+    if (isImporting.value) {
+      showToast('Scan in Progress', 'Wait for the current operation to finish.',
+          tone: ToastTone.warning);
+      return;
+    }
+
+    try {
+      final folder =
+          directoryPath ?? await FilePicker.platform.getDirectoryPath();
+      if (folder == null || folder.isEmpty) return;
+
+      final dir = Directory(folder);
+      if (!await dir.exists()) {
+        showToast('Folder Not Found', 'The selected folder does not exist.',
+            tone: ToastTone.error);
+        return;
+      }
+
+      await _hive.setSetting(AppConstants.keyCustomModelsDirectory, folder);
+
+      int discovered = 0;
+      final entities = await dir.list(recursive: false).toList();
+      for (final entity in entities) {
+        if (entity is File) {
+          final filename = p.basename(entity.path);
+          final lower = filename.toLowerCase();
+          if (lower.endsWith('.gguf')) {
+            if (_isAuxiliaryImageFile(filename)) {
+              externalModelPaths[filename] = entity.path;
+              visionFiles.add(filename);
+              continue;
+            }
+            final bytes = await entity.length();
+            if (bytes > 0) {
+              await _registerDirectModel(
+                path: entity.path,
+                filename: filename,
+                bytes: bytes,
+              );
+              discovered++;
+            }
+          }
+        }
+      }
+
+      await _saveExternalModelPaths();
+      await refreshDownloaded();
+
+      modelScope.value = 'local';
+      showToast(
+        'Folder Scanned',
+        discovered == 1
+            ? 'Found and linked 1 GGUF model from $folder'
+            : 'Found and linked $discovered GGUF models from $folder',
+        tone: ToastTone.success,
+      );
+    } catch (e, stack) {
+      Get.find<AppLogService>()
+          .error('Custom folder scan failed', details: '$e\n$stack');
+      showToast('Scan Failed', '$e', tone: ToastTone.error);
+    }
   }
 
   Future<void> importModelFromStorage() async {

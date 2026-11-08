@@ -109,9 +109,33 @@ class ModelView extends GetView<ModelController> {
 
   Widget _buildLocalActions(BuildContext context) {
     final inference = Get.find<InferenceService>();
+    final isDesktop = ModelController.isDesktop;
     return Obx(() {
       final busy =
           controller.isImporting.value || inference.isLoadingModel.value;
+      if (isDesktop) {
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            PillButton(
+              label: 'Direct Link',
+              icon: Icons.link_rounded,
+              onPressed: busy ? null : () => controller.importModelDirectLink(),
+            ),
+            PillButton(
+              label: 'Scan Folder',
+              icon: Icons.folder_open_rounded,
+              onPressed: busy ? null : () => controller.scanCustomModelFolder(),
+            ),
+            PillButton(
+              label: 'Import',
+              icon: Icons.file_upload_outlined,
+              onPressed: busy ? null : () => _showImportSheet(context),
+            ),
+          ],
+        );
+      }
       return PillButton(
         label: 'Import file',
         icon: Icons.file_upload_outlined,
@@ -143,32 +167,68 @@ class ModelView extends GetView<ModelController> {
   // ── Import ────────────────────────────────────────────────────────────
 
   void _showImportSheet(BuildContext context) {
+    final isDesktop = ModelController.isDesktop;
     showAppSheet<void>(
       context,
-      title: 'Import model',
-      subtitle: 'Add .gguf, .litertlm or .safetensors files from your phone.',
+      title: isDesktop ? 'Add model' : 'Import model',
+      subtitle: isDesktop
+          ? 'Link models directly from disk without copying, or add to app storage.'
+          : 'Add .gguf, .litertlm or .safetensors files from your phone.',
       builder: (ctx) => AppGroup(dividerIndent: 60, children: [
-        AppRow(
-          icon: Icons.insert_drive_file_outlined,
-          title: 'Import file',
-          subtitle: 'Choose a single model file',
-          chevron: true,
-          onTap: () {
-            Navigator.pop(ctx);
-            controller.importModelFromStorage();
-          },
-        ),
-        if (controller.supportsFolderImport)
+        if (isDesktop) ...[
           AppRow(
-            icon: Icons.folder_open_rounded,
-            title: 'Import from folder',
-            subtitle: 'Scan a folder and pick the models to add',
+            icon: Icons.link_rounded,
+            title: 'Direct Link (.gguf)',
+            subtitle: 'Instant — no disk copying required',
             chevron: true,
             onTap: () {
               Navigator.pop(ctx);
-              _importFromFolder(context);
+              controller.importModelDirectLink();
             },
           ),
+          AppRow(
+            icon: Icons.folder_open_rounded,
+            title: 'Scan Folder for Models',
+            subtitle: 'Add a directory of GGUF models',
+            chevron: true,
+            onTap: () {
+              Navigator.pop(ctx);
+              controller.scanCustomModelFolder();
+            },
+          ),
+          AppRow(
+            icon: Icons.copy_all_rounded,
+            title: 'Copy File to App Storage',
+            subtitle: 'Traditional copy',
+            chevron: true,
+            onTap: () {
+              Navigator.pop(ctx);
+              controller.importModelFromStorage();
+            },
+          ),
+        ] else ...[
+          AppRow(
+            icon: Icons.insert_drive_file_outlined,
+            title: 'Import file',
+            subtitle: 'Choose a single model file',
+            chevron: true,
+            onTap: () {
+              Navigator.pop(ctx);
+              controller.importModelFromStorage();
+            },
+          ),
+          if (controller.supportsFolderImport)
+            AppRow(
+              icon: Icons.folder_open_rounded,
+              title: 'Import from folder',
+              subtitle: 'Scan a folder and pick the models to add',
+              chevron: true,
+              onTap: () {
+                Navigator.pop(ctx);
+                _importFromFolder(context);
+              },
+            ),
+        ],
       ]),
     );
   }
@@ -1397,9 +1457,11 @@ class ModelView extends GetView<ModelController> {
   // ── Local model cards ─────────────────────────────────────────────────
 
   List<AppTag> _buildModelTags(BuildContext context, AiModel model) {
+    final t = AppTokens.of(context);
     final filter = controller.localFilter.value.isEmpty
         ? controller.defaultLocalFilter
         : controller.localFilter.value;
+    final isLinked = controller.isModelLinked(model.filename);
     return [
       if (model.recommendedFor.contains(filter))
         AppTag('Recommended',
@@ -1410,7 +1472,10 @@ class ModelView extends GetView<ModelController> {
         const AppTag('Image', icon: Icons.image_outlined),
       if (controller.isNpuModel(model)) const AppTag('NPU'),
       if (controller.isUncensoredModel(model)) const AppTag('Uncensored'),
-      if (model.isImported) const AppTag('Imported'),
+      if (isLinked)
+        AppTag('Linked', icon: Icons.link_rounded, color: t.accent)
+      else if (model.isImported)
+        const AppTag('Imported'),
       if (model.isCustom) const AppTag('Custom'),
     ];
   }
@@ -1485,11 +1550,14 @@ class ModelView extends GetView<ModelController> {
 
   Future<void> _confirmDeleteModel(
       BuildContext context, String filename) async {
+    final isLinked = controller.isModelLinked(filename);
     final confirmed = await confirmSheet(
       context,
-      title: 'Delete model?',
-      message: '$filename will be permanently removed from this device.',
-      confirmLabel: 'Delete',
+      title: isLinked ? 'Unlink model?' : 'Delete model?',
+      message: isLinked
+          ? '$filename will be unlinked from the app. The original file on your SSD will not be deleted.'
+          : '$filename will be permanently removed from this device.',
+      confirmLabel: isLinked ? 'Unlink' : 'Delete',
       destructive: true,
     );
     if (confirmed) await controller.deleteModel(filename);
@@ -1504,6 +1572,8 @@ class ModelView extends GetView<ModelController> {
           : model.filename;
 
       final isDownloaded = controller.isDownloaded(model.filename);
+      final isLinked = controller.isModelLinked(actualFilename);
+      final linkedPath = controller.externalModelPaths[actualFilename];
       final inference = Get.find<InferenceService>();
       final localImage = Get.find<LocalImageService>();
       final isActive = inference.loadedModelName.value == actualFilename ||
@@ -1555,9 +1625,14 @@ class ModelView extends GetView<ModelController> {
           );
         } else {
           primaryAction = Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.check_rounded, size: 15, color: t.muted),
+            Icon(isLinked ? Icons.link_rounded : Icons.check_rounded,
+                size: 15, color: isLinked ? t.accent : t.muted),
             const SizedBox(width: 4),
-            Text('On phone', style: t.small),
+            Text(
+                isLinked
+                    ? 'Linked'
+                    : (ModelController.isDesktop ? 'Downloaded' : 'On phone'),
+                style: t.small.copyWith(color: isLinked ? t.accent : null)),
           ]);
         }
       } else {
@@ -1574,7 +1649,7 @@ class ModelView extends GetView<ModelController> {
 
       // Secondary actions live in the ⋯ sheet.
       final secondary = <(IconData, String, bool, VoidCallback)>[
-        if (!isCurrentlyDownloading && isDownloaded)
+        if (!isCurrentlyDownloading && isDownloaded && !isLinked)
           (
             Icons.save_alt_rounded,
             model.hasVisionProjector
@@ -1585,8 +1660,8 @@ class ModelView extends GetView<ModelController> {
           ),
         if (!isCurrentlyDownloading && isDownloaded && !isActive)
           (
-            Icons.delete_outline_rounded,
-            'Delete model',
+            isLinked ? Icons.link_off_rounded : Icons.delete_outline_rounded,
+            isLinked ? 'Unlink model' : 'Delete model',
             true,
             () => _confirmDeleteModel(context, actualFilename),
           ),
@@ -1624,7 +1699,7 @@ class ModelView extends GetView<ModelController> {
         if (variant != null) variant,
         if (!library && controller.isVisionModel(model) && filter != 'vision')
           'Vision',
-        if (model.isImported) 'Imported',
+        if (isLinked) 'Linked' else if (model.isImported) 'Imported',
       ].join(' · ');
       void openDetails() => _showModelDetails(
           context, model, subtitle, secondary, disableActions, primaryAction,
@@ -1665,6 +1740,15 @@ class ModelView extends GetView<ModelController> {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis),
                             ),
+                            if (isLinked) ...[
+                              const SizedBox(width: 8),
+                              Tooltip(
+                                message: linkedPath ?? 'Direct Link',
+                                child: AppTag('Linked',
+                                    icon: Icons.link_rounded,
+                                    color: t.accent),
+                              ),
+                            ],
                             if (uncensored) ...[
                               const SizedBox(width: 8),
                               AppTag('Uncensored', color: t.orange),
@@ -1750,8 +1834,33 @@ class ModelView extends GetView<ModelController> {
         padding: const EdgeInsets.fromLTRB(4, 0, 0, 0),
         child: Row(children: [
           Expanded(
-              child:
-                  Text('On this phone · ${models.length}', style: t.caption)),
+            child: Text(
+              ModelController.isDesktop
+                  ? 'Local Models · ${models.length}'
+                  : 'On this phone · ${models.length}',
+              style: t.caption,
+            ),
+          ),
+          if (ModelController.isDesktop) ...[
+            _TextAction(
+              icon: Icons.link_rounded,
+              label: 'Direct Link',
+              color: t.accent,
+              onTap: controller.isImporting.value
+                  ? null
+                  : () => controller.importModelDirectLink(),
+            ),
+            const SizedBox(width: 8),
+            _TextAction(
+              icon: Icons.folder_open_rounded,
+              label: 'Scan Folder',
+              color: t.accent,
+              onTap: controller.isImporting.value
+                  ? null
+                  : () => controller.scanCustomModelFolder(),
+            ),
+            const SizedBox(width: 8),
+          ],
           _sortAction(),
         ]),
       ),
@@ -1943,6 +2052,8 @@ class ModelView extends GetView<ModelController> {
     VoidCallback? onLoad,
   }) {
     final downloaded = controller.isDownloaded(model.filename);
+    final isLinked = controller.isModelLinked(model.filename);
+    final linkedPath = controller.externalModelPaths[model.filename];
     showAppSheet<void>(
       context,
       title: model.name,
@@ -1955,6 +2066,39 @@ class ModelView extends GetView<ModelController> {
           children: [
             if (model.description.trim().isNotEmpty)
               Text(model.description, style: t.body.copyWith(color: t.muted)),
+            if (isLinked && linkedPath != null && linkedPath.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: _sheetSurface(t),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: t.hairline, width: 0.5),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.link_rounded, size: 16, color: t.accent),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Direct Link Path',
+                              style: t.label.copyWith(fontSize: 11)),
+                          const SizedBox(height: 2),
+                          SelectableText(
+                            linkedPath,
+                            style:
+                                t.mono.copyWith(fontSize: 11, color: t.muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             if (tags.isNotEmpty) ...[
               const SizedBox(height: 12),
               Wrap(spacing: 6, runSpacing: 6, children: tags),
