@@ -1,42 +1,98 @@
-# PrivateLM
+# PrivateLM — Cross-Platform Distributed LLM Client
 
 [![Live Web App](https://img.shields.io/badge/Live_Demo-Try_Web_App-02569B?style=for-the-badge&logo=flutter&logoColor=white)](https://ai-chat-orailnoor.web.app/)
+[![Platforms](https://img.shields.io/badge/Platforms-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android%20%7C%20iOS-blue?style=for-the-badge)](https://github.com/AuspiciousAspirant/cross-platform-llm-client)
+[![Protocol](https://img.shields.io/badge/LAN%20Cluster-ggml--rpc%20%3A50052-purple?style=for-the-badge)](https://github.com/AuspiciousAspirant/cross-platform-llm-client)
 
-A production-ready, cross-platform AI chat client built with Flutter. It unifies local on-device LLM inference (Android) with cloud API access, giving users full control over how their models run.
-
-![Image generation tested on Moto G71 (Snapdragon), Oneplus 10r (Mediatek), Pixel 6A (Tensor), Poco F1 (Snapdragon), Samsung s23 (Snapdragon) 4 steps fast](PrivateLM.png)
-_Image generation tested on Moto G71 (Snapdragon), Oneplus 10r (Mediatek), Pixel 6A (Tensor), Poco F1 (Snapdragon), Samsung s23 (Snapdragon) 4 steps fast_
-
-![Generated on pixel 6 with 20 step](IMG_2390.png)
-_Generated on pixel 6 with 20 step_
+A production-ready, cross-platform AI workstation client built with Flutter. It unifies local on-device LLM inference across **PCs (Windows, macOS, Linux)** and **Mobile devices (Android, iOS)** with cloud API access and **bi-directional LAN model layer splitting**.
 
 ---
 
-## What It Does
+## Key Highlights
 
-- **Local Inference on Android** — Download and run GGUF models directly on your phone using GPU-accelerated inference (Vulkan). No internet required after download.
-- **Cloud API Fallback** — Seamlessly switch to OpenAI, Anthropic, Google Gemini, or Kimi (Moonshot AI) when you need more power or are on unsupported platforms.
-- **Multimodal Chat** — Send text and images in conversations. Vision support works with both local models (Qwen2-VL) and cloud providers.
-- **Persistent Sessions** — All chats and settings are stored locally via Hive. Nothing leaves your device unless you explicitly choose cloud mode.
-- **Background Services** — Firebase Cloud Messaging integration for push updates and background task handling.
-- **Smart Auto-Configuration** — On first launch, the app detects your device's RAM and recommends optimal context size and token limits automatically.
-- **Task Management (in development)** — A task view for structured, multi-step AI workflows is being built. It is not available in the app yet.
+- **Bi-Directional LAN Distributed Cluster** — Split large GGUF models across devices over Wi-Fi / Ethernet on port `50052` using `llama.cpp`'s native RPC protocol (`ggml-rpc`).
+  - **PC Master + Mobile Workers**: Your PC drives the UI and offloads model layers to phones or tablets over LAN.
+  - **Phone Master + PC Worker**: Your phone drives the UI and offloads 50–80% of layers to your desktop PC's GPU or high-speed RAM.
+  - **One-Click PC Worker Mode**: Run `rpc-server` daemon directly inside the app with live connection logs and benchmarked memory bandwidth (GB/s).
+- **Responsive Desktop Workstation UI** — Modern technical design featuring a collapsible navigation rail (`width >= 800px`), docked split-pane chat history (`width >= 900px`), and center-constrained reading view (`maxWidth: 860px`).
+- **Local Inference Across Desktop & Mobile** — Download and run GGUF models directly on Windows, macOS, Linux, Android, and iOS using GPU acceleration (Vulkan, Metal, CUDA).
+- **Cloud API Fallback** — Seamlessly switch to OpenAI, Anthropic, Google Gemini, or Kimi (Moonshot AI).
+- **Multimodal Chat** — Send text and images in conversations with vision projector support (`mmproj`).
+- **Persistent Sessions** — All chats and settings stored locally via Hive. Nothing leaves your device unless you explicitly choose cloud mode.
+- **Auto-Config & Benchmark** — Detects device memory and benchmarks memory bandwidth in a background `Isolate` for optimal layer splitting.
 
 ---
 
-## Technical Architecture
+## LAN Distributed Inference Architecture
 
-### Stack
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                   Local Area Network (Wi-Fi / Ethernet)                │
+└────────────────────────────────────┬───────────────────────────────────┘
+                                     │
+           ┌─────────────────────────┴─────────────────────────┐
+           ▼                                                   ▼
+┌──────────────────────────────────────┐    ┌──────────────────────────────────────┐
+│       🖥️ PC Master Node (Windows)     │    │       📱 Mobile Worker Node (Android)│
+│  • Loads GGUF Model                  │    │  • Listens on LAN IP:50052           │
+│  • Keeps Vocab / Embedding Layers    │    │  • Holds 40–70% of Transformer Layers│
+│  • Streams Tokens via OpenAI SSE     │    │  • GPU Vulkan / CPU Compute Buffer   │
+└──────────────────┬───────────────────┘    └──────────────────┬───────────────────┘
+                   │                                           │
+                   └─────── 1–5ms Low-Latency ggml-rpc ────────┘
+                                   (Port 50052)
+```
 
-- **Framework:** Flutter 3.x (Dart >=3.3.0)
-- **State Management:** GetX
-- **Local Storage:** Hive
-- **Networking:** Dio + `package:http`
-- **Background Execution:** `flutter_background_service` + `flutter_local_notifications`
-- **Push Notifications:** Firebase Core + Firebase Messaging
+---
 
-### Inference Pipeline
+## Supported Platforms
 
+| Platform | Local Inference | Distributed Cluster | Cloud APIs | Acceleration |
+| :--- | :---: | :---: | :---: | :--- |
+| **Windows** | ✅ Yes | ✅ Master & Worker | ✅ Yes | DirectX 12, Vulkan, CPU |
+| **Android** | ✅ Yes | ✅ Master & Worker | ✅ Yes | Vulkan GPU, CPU NEON |
+| **iOS / iPad** | ✅ Yes | ✅ Master & Worker | ✅ Yes | Metal GPU acceleration |
+| **macOS** | ✅ Yes | ✅ Master & Worker | ✅ Yes | Metal GPU, Apple Silicon |
+| **Linux** | ✅ Yes | ✅ Master & Worker | ✅ Yes | Vulkan, CUDA, CPU |
+| **Web** | ❌ No | ❌ No | ✅ Yes | Cloud-only fallback |
+
+---
+
+## Build Configuration
+
+### Prerequisites
+
+- Flutter SDK >=3.3.0
+- Dart SDK >=3.3.0
+- Visual Studio 2022 with Desktop C++ workload (Windows)
+- Android SDK (API 28+) & NDK (Android)
+- Xcode 15+ (macOS / iOS)
+
+### Windows Desktop Build
+
+```powershell
+flutter pub get
+flutter build windows --release
+```
+
+To quickly set up `llama-server.exe` and `rpc-server.exe` in `bin/`:
+```powershell
+.\scripts\download_desktop_binaries.ps1
+```
+
+### Android Build
+
+```bash
+flutter pub get
+flutter build apk --release --split-per-abi
+```
+
+### iOS Build
+
+```bash
+flutter pub get
+cd ios && pod install && cd ..
+flutter build ios --release
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        UI Layer                              │
