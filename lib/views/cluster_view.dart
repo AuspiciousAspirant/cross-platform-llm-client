@@ -971,13 +971,27 @@ class _SplitCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = AppTokens.of(context);
+    final cluster = Get.find<ClusterService>();
     final colors = [t.accent, t.green, t.orange, const Color(0xFFAF52DE), t.red];
     final total = shares.fold<double>(0, (a, s) => a + s.mb);
+
     return AppCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Loaded model', style: t.bodyStrong),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Distributed model topology', style: t.bodyStrong),
+            Obx(() {
+              final ms = cluster.clusterLatencyMs.value;
+              if (ms > 0) {
+                return AppTag('${ms}ms avg', icon: Icons.speed_rounded, color: t.green);
+              }
+              return const SizedBox.shrink();
+            }),
+          ],
+        ),
         const SizedBox(height: 2),
-        Text('Running on ${shares.length} phones · ${_gb(total)}', style: t.caption),
+        Text('Running on ${shares.length} devices · ${_gb(total)}', style: t.caption),
         const SizedBox(height: 14),
         ClipRRect(
           borderRadius: BorderRadius.circular(6),
@@ -989,7 +1003,7 @@ class _SplitCard extends StatelessWidget {
                   flex: (shares[i].mb / total * 1000).round().clamp(1, 1000),
                   child: Container(
                     margin: EdgeInsets.only(right: i == shares.length - 1 ? 0 : 2),
-                    color: colors[i % colors.length],
+                    color: shares[i].isHealthy ? colors[i % colors.length] : t.red,
                   ),
                 ),
             ]),
@@ -1000,12 +1014,39 @@ class _SplitCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Row(children: [
-              StatusDot(colors[i % colors.length], size: 10),
+              StatusDot(shares[i].isHealthy ? colors[i % colors.length] : t.red, size: 10),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  shares[i].isThisPhone ? '${shares[i].name} (this phone)' : shares[i].name,
-                  style: t.body,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            shares[i].isThisPhone
+                                ? '${shares[i].name} (this device)'
+                                : shares[i].name,
+                            style: t.body,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (!shares[i].isHealthy) ...[
+                          const SizedBox(width: 6),
+                          AppTag('Offline', color: t.red),
+                        ],
+                      ],
+                    ),
+                    Text(
+                      [
+                        'Layers ${shares[i].startLayer}–${shares[i].endLayer}',
+                        if (!shares[i].isThisPhone && shares[i].pingMs != null)
+                          '${shares[i].pingMs}ms',
+                      ].join(' · '),
+                      style: t.caption,
+                    ),
+                  ],
                 ),
               ),
               Text('${(shares[i].mb / total * 100).round()}%', style: t.bodyStrong),
@@ -1016,6 +1057,42 @@ class _SplitCard extends StatelessWidget {
               ),
             ]),
           ),
+        Obx(() {
+          final dropped = cluster.droppedWorkers;
+          if (dropped.isEmpty) return const SizedBox.shrink();
+          return Container(
+            margin: const EdgeInsets.only(top: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: t.red.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: t.red.withValues(alpha: 0.25), width: 0.5),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, size: 20, color: t.red),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Worker unreachable',
+                          style: t.bodyStrong.copyWith(color: t.red, fontSize: 13.5)),
+                      const SizedBox(height: 1),
+                      Text('${dropped.join(', ')} failed health checks',
+                          style: t.caption.copyWith(color: t.red)),
+                    ],
+                  ),
+                ),
+                PillButton(
+                  label: 'Local Fallback',
+                  destructive: true,
+                  onPressed: () => cluster.fallbackToLocal(),
+                ),
+              ],
+            ),
+          );
+        }),
       ]),
     );
   }

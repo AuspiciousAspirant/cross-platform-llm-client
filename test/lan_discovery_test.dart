@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
+import 'package:privatelm/services/cluster_service.dart';
 import 'package:privatelm/services/lan_cluster_discovery.dart';
 
 void main() {
@@ -211,6 +212,85 @@ void main() {
       expect(parsedWorker.bandwidth, originalWorker.bandwidth);
       expect(parsedWorker.model, originalWorker.model);
       expect(parsedWorker.endpoint, originalWorker.endpoint);
+    });
+  });
+
+  group('ClusterShare & Topology Layer Tests', () {
+    test('ClusterShare defaults and copyWith behavior', () {
+      const share = ClusterShare('Worker-PC', 2048.0);
+      expect(share.name, 'Worker-PC');
+      expect(share.mb, 2048.0);
+      expect(share.isThisPhone, isFalse);
+      expect(share.startLayer, 0);
+      expect(share.endLayer, 0);
+      expect(share.endpoint, '');
+      expect(share.pingMs, isNull);
+      expect(share.isHealthy, isTrue);
+
+      final updated = share.copyWith(
+        startLayer: 10,
+        endLayer: 21,
+        endpoint: '192.168.1.50:50052',
+        pingMs: 14,
+        isHealthy: false,
+      );
+
+      expect(updated.startLayer, 10);
+      expect(updated.endLayer, 21);
+      expect(updated.endpoint, '192.168.1.50:50052');
+      expect(updated.pingMs, 14);
+      expect(updated.isHealthy, isFalse);
+    });
+
+    test('Sequential layer allocation spans 32 layers contiguously', () {
+      const totalLayers = 32;
+      const masterMb = 2000.0;
+      const worker1Mb = 1000.0;
+      const worker2Mb = 1000.0;
+      const totalMb = masterMb + worker1Mb + worker2Mb;
+
+      final shares = <ClusterShare>[];
+      var currentLayer = 0;
+
+      // Master (50% -> 16 layers: 0..15)
+      final masterLayers = (totalLayers * (masterMb / totalMb)).round();
+      final masterEnd = currentLayer + masterLayers - 1;
+      shares.add(ClusterShare(
+        'Master',
+        masterMb,
+        isThisPhone: true,
+        startLayer: currentLayer,
+        endLayer: masterEnd,
+      ));
+      currentLayer = masterEnd + 1;
+
+      // Worker 1 (25% -> 8 layers: 16..23)
+      final w1Layers = (totalLayers * (worker1Mb / totalMb)).round();
+      final w1End = currentLayer + w1Layers - 1;
+      shares.add(ClusterShare(
+        'Worker-1',
+        worker1Mb,
+        startLayer: currentLayer,
+        endLayer: w1End,
+      ));
+      currentLayer = w1End + 1;
+
+      // Worker 2 (last node absorbs remaining layers to 31)
+      final w2Layers = totalLayers - currentLayer;
+      final w2End = currentLayer + w2Layers - 1;
+      shares.add(ClusterShare(
+        'Worker-2',
+        worker2Mb,
+        startLayer: currentLayer,
+        endLayer: w2End,
+      ));
+
+      expect(shares[0].startLayer, 0);
+      expect(shares[0].endLayer, 15);
+      expect(shares[1].startLayer, 16);
+      expect(shares[1].endLayer, 23);
+      expect(shares[2].startLayer, 24);
+      expect(shares[2].endLayer, 31);
     });
   });
 }

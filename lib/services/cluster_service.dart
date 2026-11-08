@@ -11,10 +11,12 @@ import 'package:llama_flutter_android/llama_flutter_android.dart';
 
 import '../core/constants.dart';
 import '../core/ui.dart';
+import '../controllers/model_controller.dart';
 import 'app_log_service.dart';
 import 'desktop_inference_engine.dart';
 import 'desktop_rpc_worker.dart';
 import 'hive_service.dart';
+import 'inference_service.dart';
 import 'lan_cluster_discovery.dart';
 
 /// Diagnostics result for LAN network, ports, binaries, and memory.
@@ -61,12 +63,48 @@ enum ClusterRole {
   worker,
 }
 
-/// One phone's part of the loaded model.
+/// One phone's or computer's part of the loaded model.
 class ClusterShare {
   final String name;
   final double mb;
   final bool isThisPhone;
-  const ClusterShare(this.name, this.mb, {this.isThisPhone = false});
+  final int startLayer;
+  final int endLayer;
+  final String endpoint;
+  final int? pingMs;
+  final bool isHealthy;
+
+  const ClusterShare(
+    this.name,
+    this.mb, {
+    this.isThisPhone = false,
+    this.startLayer = 0,
+    this.endLayer = 0,
+    this.endpoint = '',
+    this.pingMs,
+    this.isHealthy = true,
+  });
+
+  ClusterShare copyWith({
+    String? name,
+    double? mb,
+    bool? isThisPhone,
+    int? startLayer,
+    int? endLayer,
+    String? endpoint,
+    int? pingMs,
+    bool? isHealthy,
+  }) =>
+      ClusterShare(
+        name ?? this.name,
+        mb ?? this.mb,
+        isThisPhone: isThisPhone ?? this.isThisPhone,
+        startLayer: startLayer ?? this.startLayer,
+        endLayer: endLayer ?? this.endLayer,
+        endpoint: endpoint ?? this.endpoint,
+        pingMs: pingMs ?? this.pingMs,
+        isHealthy: isHealthy ?? this.isHealthy,
+      );
 }
 
 /// A phone the master can put layers on, for planning a load.
@@ -127,6 +165,21 @@ class ClusterService extends GetxService {
 
   /// How the loaded model is spread across phones; empty when it isn't.
   final split = <ClusterShare>[].obs;
+
+  /// Average ping of active cluster workers in ms.
+  final clusterLatencyMs = 0.obs;
+
+  /// True when all cluster workers respond to health keepalive pings.
+  final isClusterHealthy = true.obs;
+
+  /// Live round-trip latency in ms per worker endpoint (null if unreachable).
+  final workerPings = <String, int?>{}.obs;
+
+  /// Worker endpoints that have recently failed keepalive pings.
+  final droppedWorkers = <String>[].obs;
+
+  Timer? _keepaliveTimer;
+  final Map<String, int> _workerFailCounts = {};
 
   String deviceName = '';
   double? _localSpeed;
@@ -196,6 +249,7 @@ class ClusterService extends GetxService {
   @override
   void onClose() {
     _statusTimer?.cancel();
+    _stopMasterKeepalive();
     _lanDiscovery.dispose();
     if (isDesktop) {
       _desktopWorker.stop();
@@ -696,26 +750,236 @@ class ClusterService extends GetxService {
   /// shares come from llama.cpp's per-device weight buffers; this phone's
   /// share is the rest of the file, because its own buffers overlap (the
   /// mapped file and the CPU's repacked copy of the same weights).
-  Future<void> refreshSplit(String modelPath) async {
+  Future<void> refreshSplit(String modelPath, {int totalLayers = 32}) async {
     final buffers = await LlamaCluster.lastLoadBuffers();
-    final remote = <String, double>{};
+    final remote = <String, ({double mb, String endpoint})>{};
     for (final b in buffers) {
       final open = b.name.indexOf('[');
       if (open < 0) continue;
       final endpoint = b.name.substring(open + 1, b.name.lastIndexOf(']'));
       final name = workers.firstWhereOrNull((w) => w.endpoint == endpoint)?.model ?? endpoint;
-      remote[name] = (remote[name] ?? 0) + b.mb;
+      final prevMb = remote[name]?.mb ?? 0.0;
+      remote[name] = (mb: prevMb + b.mb, endpoint: endpoint);
     }
     final fileMb = await File(modelPath).length() / (1024 * 1024);
-    final remoteMb = remote.values.fold<double>(0, (a, b) => a + b);
-    split.assignAll([
-      ClusterShare(deviceName.isEmpty ? 'This phone' : deviceName,
-          math.max(0, fileMb - remoteMb), isThisPhone: true),
-      for (final e in remote.entries) ClusterShare(e.key, e.value),
-    ]);
+    final remoteMb = remote.values.fold<double>(0, (a, b) => a + b.mb);
+    final masterMb = math.max(0.0, fileMb - remoteMb);
+    final totalMb = masterMb + remoteMb;
+
+    final shares = <ClusterShare>[];
+    var currentLayer = 0;
+
+    if (remote.isEmpty) {
+      shares.add(ClusterShare(
+        deviceName.isEmpty ? (isDesktop ? 'This PC' : 'This phone') : deviceName,
+        masterMb,
+        isThisPhone: true,
+        startLayer: 0,
+        endLayer: totalLayers - 1,
+        endpoint: wifiAddress.value != null ? '${wifiAddress.value}:50052' : '127.0.0.1:50052',
+        isHealthy: true,
+      ));
+    } else {
+      final masterRatio = totalMb > 0 ? (masterMb / totalMb) : 0.5;
+      final masterLayers = math.max(1, (masterRatio * totalLayers).round());
+      final masterEnd = math.min(totalLayers - 1, currentLayer + masterLayers - 1);
+
+      shares.add(ClusterShare(
+        deviceName.isEmpty ? (isDesktop ? 'This PC' : 'This phone') : deviceName,
+        masterMb,
+        isThisPhone: true,
+        startLayer: currentLayer,
+        endLayer: masterEnd,
+        endpoint: wifiAddress.value != null ? '${wifiAddress.value}:50052' : '127.0.0.1:50052',
+        isHealthy: true,
+      ));
+      currentLayer = masterEnd + 1;
+
+      final remoteEntries = remote.entries.toList();
+      for (var i = 0; i < remoteEntries.length; i++) {
+        final e = remoteEntries[i];
+        final isLast = i == remoteEntries.length - 1;
+        final wMb = e.value.mb;
+        final int wLayers;
+        if (isLast) {
+          wLayers = math.max(1, totalLayers - currentLayer);
+        } else {
+          final wRatio = totalMb > 0 ? (wMb / totalMb) : 0.0;
+          final calculated = (wRatio * totalLayers).round();
+          wLayers = math.max(1, math.min(calculated, totalLayers - currentLayer));
+        }
+        final wEnd = math.min(totalLayers - 1, currentLayer + wLayers - 1);
+
+        shares.add(ClusterShare(
+          e.key,
+          wMb,
+          isThisPhone: false,
+          startLayer: currentLayer,
+          endLayer: wEnd,
+          endpoint: e.value.endpoint,
+          isHealthy: true,
+        ));
+        currentLayer = wEnd + 1;
+      }
+    }
+
+    split.assignAll(shares);
+    _startMasterKeepalive();
   }
 
-  void clearSplit() => split.clear();
+  /// Tests TCP connection to a worker endpoint and measures round-trip time.
+  Future<int?> pingWorker(String host, int port,
+      {Duration timeout = const Duration(milliseconds: 1200)}) async {
+    final sw = Stopwatch()..start();
+    try {
+      final socket = await Socket.connect(host, port, timeout: timeout);
+      sw.stop();
+      socket.destroy();
+      return sw.elapsedMilliseconds;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _startMasterKeepalive() {
+    _keepaliveTimer?.cancel();
+    _keepaliveTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+      if (role != ClusterRole.master || split.isEmpty) {
+        _keepaliveTimer?.cancel();
+        _keepaliveTimer = null;
+        return;
+      }
+      final remoteShares =
+          split.where((s) => !s.isThisPhone && s.endpoint.isNotEmpty).toList();
+      if (remoteShares.isEmpty) {
+        clusterLatencyMs.value = 0;
+        isClusterHealthy.value = true;
+        droppedWorkers.clear();
+        return;
+      }
+
+      final pings = <int>[];
+      final newlyDropped = <String>[];
+
+      for (var i = 0; i < split.length; i++) {
+        final share = split[i];
+        if (share.isThisPhone || share.endpoint.isEmpty) continue;
+
+        final parts = share.endpoint.split(':');
+        final host = parts[0];
+        final port = parts.length > 1
+            ? int.tryParse(parts[1]) ?? LlamaCluster.defaultPort
+            : LlamaCluster.defaultPort;
+
+        final ms = await pingWorker(host, port);
+        workerPings[share.endpoint] = ms;
+
+        if (ms != null) {
+          _workerFailCounts[share.endpoint] = 0;
+          pings.add(ms);
+          if (!share.isHealthy || share.pingMs != ms) {
+            split[i] = share.copyWith(isHealthy: true, pingMs: ms);
+          }
+        } else {
+          final fails = (_workerFailCounts[share.endpoint] ?? 0) + 1;
+          _workerFailCounts[share.endpoint] = fails;
+          if (fails >= 2) {
+            newlyDropped.add(share.endpoint);
+            if (share.isHealthy) {
+              split[i] = share.copyWith(isHealthy: false, pingMs: null);
+            }
+          }
+        }
+      }
+
+      droppedWorkers.assignAll(newlyDropped);
+      isClusterHealthy.value = newlyDropped.isEmpty;
+      if (pings.isNotEmpty) {
+        clusterLatencyMs.value =
+            (pings.reduce((a, b) => a + b) / pings.length).round();
+      }
+    });
+  }
+
+  void clearSplit() {
+    _keepaliveTimer?.cancel();
+    _keepaliveTimer = null;
+    split.clear();
+    workerPings.clear();
+    droppedWorkers.clear();
+    clusterLatencyMs.value = 0;
+    isClusterHealthy.value = true;
+  }
+
+  /// Manually pings all active remote workers and updates telemetry.
+  Future<void> retestPings() async {
+    final remoteShares =
+        split.where((s) => !s.isThisPhone && s.endpoint.isNotEmpty).toList();
+    if (remoteShares.isEmpty) {
+      clusterLatencyMs.value = 0;
+      isClusterHealthy.value = true;
+      droppedWorkers.clear();
+      return;
+    }
+
+    final pings = <int>[];
+    final newlyDropped = <String>[];
+
+    for (var i = 0; i < split.length; i++) {
+      final share = split[i];
+      if (share.isThisPhone || share.endpoint.isEmpty) continue;
+
+      final parts = share.endpoint.split(':');
+      final host = parts[0];
+      final port = parts.length > 1
+          ? int.tryParse(parts[1]) ?? LlamaCluster.defaultPort
+          : LlamaCluster.defaultPort;
+
+      final ms = await pingWorker(host, port);
+      workerPings[share.endpoint] = ms;
+
+      if (ms != null) {
+        _workerFailCounts[share.endpoint] = 0;
+        pings.add(ms);
+        split[i] = share.copyWith(isHealthy: true, pingMs: ms);
+      } else {
+        newlyDropped.add(share.endpoint);
+        split[i] = share.copyWith(isHealthy: false, pingMs: null);
+      }
+    }
+
+    droppedWorkers.assignAll(newlyDropped);
+    isClusterHealthy.value = newlyDropped.isEmpty;
+    if (pings.isNotEmpty) {
+      clusterLatencyMs.value =
+          (pings.reduce((a, b) => a + b) / pings.length).round();
+    }
+  }
+
+  /// Gracefully falls back from a degraded cluster to local execution on master.
+  Future<bool> fallbackToLocal() async {
+    try {
+      activeDesktopClusterEndpoints.clear();
+      activeDesktopClusterWeights.clear();
+      await LlamaCluster.clear();
+      clearSplit();
+      if (Get.isRegistered<InferenceService>()) {
+        final inf = Get.find<InferenceService>();
+        final loadedModel = inf.loadedModelName.value;
+        if (loadedModel.isNotEmpty && Get.isRegistered<ModelController>()) {
+          final modelCtrl = Get.find<ModelController>();
+          final path = modelCtrl.modelPath(loadedModel);
+          if (path.isNotEmpty) {
+            await inf.loadModel(path, modelName: loadedModel);
+          }
+        }
+      }
+      return true;
+    } catch (e) {
+      Get.find<AppLogService>().error('Fallback to local failed', details: e);
+      return false;
+    }
+  }
 
   /// Runs comprehensive LAN network, port 50052, and hardware diagnostics.
   Future<ClusterDiagnosticsReport> runDiagnostics() async {

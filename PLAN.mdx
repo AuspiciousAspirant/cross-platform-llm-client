@@ -131,6 +131,53 @@ Validate distributed execution across mixed hardware:
 - **Automated Test Suite**: Added `test/desktop_cluster_test.dart` validating serialization, worker status, engine flags, and diagnostic reports.
 </Step>
 
+<Step>
+### Step 6: Zero-Configuration UDP LAN Peer Discovery [COMPLETED]
+
+Instant zero-config peer pairing without manual IP typing:
+
+- **Pure Dart UDP Socket (`LanClusterDiscovery`)**: Binds UDP port 50053 with `RawDatagramSocket`.
+- **Periodic Beacon Broadcast**: Workers broadcast metadata (host, port 50052, RAM MB, memory bandwidth GB/s, OS identity) every 3 seconds to subnet broadcast.
+- **Self-Filtering Listener**: Masters automatically discover available LAN peers and filter self-announcements.
+- **One-Click Pair**: Surface discovered workers in `ClusterView` with live hardware spec badges and one-click `+ Add`.
+- **Automated Test Suite**: Added `test/lan_discovery_test.dart` validating beacon serialization, deserialization, and byte decoding.
+</Step>
+
+<Step>
+### Step 7: Zero-Copy GGUF Linking & Model Folder Scanner [COMPLETED]
+
+Instant zero-copy model loading from local SSDs:
+
+- **Direct Storage References (`externalModelPaths`)**: Mounts 10GB–70GB GGUF models directly from external SSDs in 0 seconds with zero disk duplication.
+- **Folder Scanner**: Recursive directory scanner finds all `.gguf` files across any folder.
+- **Safe Unlinking**: Removing a linked external model purges app references while preserving original files on disk.
+- **Automated Test Suite**: Added `test/desktop_model_storage_test.dart` validating external path resolution, scanner logic, and safe unlinking.
+</Step>
+
+<Step>
+### Step 8: Hardware Performance Tuning Controls [COMPLETED]
+
+Fine-grained resource allocation for mixed hardware:
+
+- **CPU Threads Slider (`-t`)**: Configurable compute threads passed to `llama-server` and `rpc-server`.
+- **GPU Offload Layers Slider (`-ngl`)**: Granular GPU VRAM layer offload controls.
+- **Flash Attention Toggle (`-fa`)**: Memory-efficient attention mechanism for extended context windows.
+- **Persistent Settings**: Integrated directly into `SettingsView`, persisted via Hive, and forwarded to engine daemons.
+</Step>
+
+<Step>
+### Step 9: Live Cluster Telemetry, Topology Inspector & Fault-Tolerant Fallback [COMPLETED]
+
+Production-grade observability and network resilience:
+
+- **Chat AppBar Cluster Telemetry Pill**: Compact status pill displaying active nodes, real-time generation speed (`tokens/sec`), and average LAN ping latency (`ms`).
+- **Interactive Cluster Topology Modal**: Visualizes node-by-node execution pipeline, discrete layer allocations (`Layers 0–23` vs `Layers 24–31`), memory weights, and live connection health.
+- **Sequential Layer Allocator**: Mathematically partitions model layers across master and worker nodes based on allocated memory shares.
+- **TCP Health Keepalive Heartbeat**: Periodic background ping probing worker port `50052` every 3 seconds with consecutive failure detection.
+- **1-Click Worker Drop Fallback**: Warns when a mobile or PC node leaves the LAN and provides instant fallback reloading on local CPU/GPU without losing chat context.
+- **Automated Test Suite**: Added unit tests in `test/lan_discovery_test.dart` verifying `ClusterShare` layer ranges, copyWith immutability, and 32-layer allocation integrity.
+</Step>
+
 </Steps>
 
 ---

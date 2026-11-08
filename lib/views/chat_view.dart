@@ -120,6 +120,7 @@ class ChatView extends GetView<ChatController> {
       body: Column(
         children: [
           _modelLoadingBar(context, isDark),
+          _workerDropBanner(context, isDark),
           Expanded(child: Obx(() {
             if (controller.currentSessionId.value.isEmpty ||
                 controller.messages.isEmpty) {
@@ -285,6 +286,7 @@ class ChatView extends GetView<ChatController> {
         );
       }),
       actions: [
+        _clusterTelemetryPill(context, isDark),
         Obx(() {
           if (controller.messages.isEmpty) return const SizedBox.shrink();
           final usage = _contextUsage();
@@ -574,6 +576,539 @@ class ChatView extends GetView<ChatController> {
         ),
       );
     });
+  }
+
+  // ── Cluster Worker Drop Banner ──
+  Widget _workerDropBanner(BuildContext context, bool isDark) {
+    return Obx(() {
+      final cluster = Get.find<ClusterService>();
+      if (cluster.droppedWorkers.isEmpty) return const SizedBox.shrink();
+      final droppedList = cluster.droppedWorkers.join(', ');
+      return Align(
+        alignment: Alignment.center,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 860),
+          child: Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFF9500)
+                  .withValues(alpha: isDark ? 0.12 : 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: const Color(0xFFFF9500)
+                    .withValues(alpha: isDark ? 0.35 : 0.25),
+                width: 0.5,
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded,
+                    size: 20, color: Color(0xFFFF9500)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Cluster worker unreachable ($droppedList). LAN inference degraded.',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: isDark ? Colors.white : const Color(0xFF1C1C1E),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () async {
+                    Haptics.selectionClick();
+                    final ok = await cluster.fallbackToLocal();
+                    if (ok) {
+                      showToast('Cluster Recovered',
+                          'Model reloaded on local device.',
+                          tone: ToastTone.success);
+                    }
+                  },
+                  style: TextButton.styleFrom(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    backgroundColor:
+                        const Color(0xFFFF9500).withValues(alpha: 0.2),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    minimumSize: const Size(0, 32),
+                  ),
+                  child: Text(
+                    'Fallback to Local',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFFFF9500),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
+  // ── Cluster Telemetry Pill in AppBar ──
+  Widget _clusterTelemetryPill(BuildContext context, bool isDark) {
+    return Obx(() {
+      final cluster = Get.find<ClusterService>();
+      if (cluster.split.isEmpty) return const SizedBox.shrink();
+      final inf = Get.find<InferenceService>();
+      final tokPerSec = inf.tokensPerSecond.value;
+      final latency = cluster.clusterLatencyMs.value;
+      final isHealthy = cluster.isClusterHealthy.value;
+      final nodeCount = cluster.split.length;
+
+      final Color statusColor;
+      if (!isHealthy) {
+        statusColor = const Color(0xFFFF3B30);
+      } else if (latency > 75) {
+        statusColor = const Color(0xFFFF9500);
+      } else {
+        statusColor = const Color(0xFF34C759);
+      }
+
+      final label = tokPerSec > 0
+          ? '${tokPerSec.toStringAsFixed(1)} tok/s'
+          : '$nodeCount Nodes';
+
+      return Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: Tooltip(
+          message: 'Inspect LAN Cluster Topology ($nodeCount nodes)',
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                Haptics.selectionClick();
+                _showClusterTopologySheet(context);
+              },
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                height: 28,
+                padding: const EdgeInsets.symmetric(horizontal: 9),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? const Color(0xFF161618)
+                      : const Color(0xFFF4F4F5),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.1)
+                        : Colors.black.withValues(alpha: 0.08),
+                    width: 0.5,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: statusColor,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      label,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.2,
+                        color: isDark ? Colors.white : Colors.black,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    if (latency > 0) ...[
+                      const SizedBox(width: 4),
+                      Text(
+                        '· ${latency}ms',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w400,
+                          color: Theme.of(context).hintColor,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
+  // ── Cluster Topology Sheet ──
+  void _showClusterTopologySheet(BuildContext context) {
+    Haptics.selectionClick();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cluster = Get.find<ClusterService>();
+    final inf = Get.find<InferenceService>();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? const Color(0xFF161618) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+            maxWidth: 640,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+            child: Obx(() {
+              final shares = cluster.split;
+              final text = isDark ? Colors.white : const Color(0xFF0B0B0C);
+              final muted = Theme.of(ctx).hintColor;
+              final totalMb = shares.fold<double>(0, (a, s) => a + s.mb);
+
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: _sep(ctx).withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Cluster Topology & Telemetry',
+                            style: GoogleFonts.inter(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.4,
+                              color: text,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'LAN Model Distribution · Port 50052',
+                            style: GoogleFonts.inter(
+                              fontSize: 12.5,
+                              color: muted,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: (cluster.isClusterHealthy.value
+                                  ? const Color(0xFF34C759)
+                                  : const Color(0xFFFF3B30))
+                              .withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: (cluster.isClusterHealthy.value
+                                    ? const Color(0xFF34C759)
+                                    : const Color(0xFFFF3B30))
+                                .withValues(alpha: 0.25),
+                            width: 0.5,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: cluster.isClusterHealthy.value
+                                    ? const Color(0xFF34C759)
+                                    : const Color(0xFFFF3B30),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              cluster.isClusterHealthy.value
+                                  ? '${shares.length} Nodes Active'
+                                  : 'Degraded',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: cluster.isClusterHealthy.value
+                                    ? const Color(0xFF34C759)
+                                    : const Color(0xFFFF3B30),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  // Pipeline Node Cards
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: shares.length,
+                      separatorBuilder: (_, __) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Center(
+                          child: Icon(
+                            Icons.arrow_downward_rounded,
+                            size: 16,
+                            color: muted.withValues(alpha: 0.4),
+                          ),
+                        ),
+                      ),
+                      itemBuilder: (_, i) {
+                        final s = shares[i];
+                        final pct = totalMb > 0
+                            ? (s.mb / totalMb * 100).round()
+                            : 0;
+                        final layerSpan =
+                            'Layers ${s.startLayer}–${s.endLayer}';
+                        final ping = s.isThisPhone
+                            ? 'Local Master'
+                            : (s.pingMs != null ? '${s.pingMs}ms' : 'Offline');
+                        final isOnline = s.isHealthy &&
+                            (s.isThisPhone || s.pingMs != null);
+
+                        return Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF1E1E22)
+                                : const Color(0xFFF7F7F8),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.08)
+                                  : Colors.black.withValues(alpha: 0.06),
+                              width: 0.5,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? Colors.white.withValues(alpha: 0.06)
+                                      : Colors.black.withValues(alpha: 0.04),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  s.isThisPhone
+                                      ? Icons.computer_rounded
+                                      : Icons.smartphone_rounded,
+                                  size: 20,
+                                  color: s.isThisPhone
+                                      ? const Color(0xFF0A84FF)
+                                      : const Color(0xFF34C759),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          s.name,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 14.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: text,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 6, vertical: 1),
+                                          decoration: BoxDecoration(
+                                            color: (s.isThisPhone
+                                                    ? const Color(0xFF0A84FF)
+                                                    : const Color(0xFF8E8E93))
+                                                .withValues(alpha: 0.15),
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            s.isThisPhone ? 'Master' : 'Worker',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: s.isThisPhone
+                                                  ? const Color(0xFF0A84FF)
+                                                  : muted,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      '$layerSpan · ${_fmtMb(s.mb)} ($pct%)',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12.5,
+                                        color: muted,
+                                        fontFeatures: const [
+                                          FontFeature.tabularFigures()
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        width: 6,
+                                        height: 6,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: isOnline
+                                              ? const Color(0xFF34C759)
+                                              : const Color(0xFFFF3B30),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        ping,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: isOnline
+                                              ? (isDark
+                                                  ? Colors.white
+                                                  : Colors.black)
+                                              : const Color(0xFFFF3B30),
+                                          fontFeatures: const [
+                                            FontFeature.tabularFigures()
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (s.endpoint.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      s.endpoint,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: muted.withValues(alpha: 0.8),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  // Summary metrics footer
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.04)
+                          : Colors.black.withValues(alpha: 0.02),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _summaryMetric(
+                          'Generation Speed',
+                          inf.tokensPerSecond.value > 0
+                              ? '${inf.tokensPerSecond.value.toStringAsFixed(1)} t/s'
+                              : 'Idle',
+                          isDark,
+                        ),
+                        _summaryMetric(
+                          'Cluster Latency',
+                          cluster.clusterLatencyMs.value > 0
+                              ? '${cluster.clusterLatencyMs.value}ms'
+                              : '1ms',
+                          isDark,
+                        ),
+                        _summaryMetric(
+                          'Total Memory',
+                          _fmtMb(totalMb),
+                          isDark,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            }),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static Widget _summaryMetric(String label, String value, bool isDark) {
+    return Column(
+      children: [
+        Text(
+          value,
+          style: GoogleFonts.inter(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: isDark ? Colors.white : Colors.black,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            color: const Color(0xFF8E8E93),
+          ),
+        ),
+      ],
+    );
+  }
+
+  static String _fmtMb(double mb) {
+    if (mb >= 1024) {
+      return '${(mb / 1024).toStringAsFixed(1)} GB';
+    }
+    return '${mb.round()} MB';
   }
 
   // ── Empty State ──
