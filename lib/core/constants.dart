@@ -80,6 +80,8 @@ class AppConstants {
   static const String keyEnableFlashAttention = 'enable_flash_attention';
   static const String keyCustomModelsDirectory = 'custom_models_directory';
   static const String keyExternalModelPaths = 'external_model_paths';
+  static const String keyKvCacheTypeK = 'kv_cache_type_k';
+  static const String keyKvCacheTypeV = 'kv_cache_type_v';
 
   // Default Model Config
   static const double defaultTemperature = 0.7;
@@ -89,6 +91,7 @@ class AppConstants {
   static const int defaultCpuThreads = 0; // 0 = Auto detected based on CPU cores
   static const int defaultGpuOffloadLayers = 99; // 99 = Full GPU offload
   static const bool defaultEnableFlashAttention = true;
+  static const String defaultKvCacheType = 'f16'; // 'f16', 'q8_0', 'q4_0'
   static const int defaultImageSteps = 1;
   static const bool defaultImageGenForceCpu = true;
   static const int defaultImageGenGpuGuardMb = 1843; // 1.8 GB

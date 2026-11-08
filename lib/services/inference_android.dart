@@ -110,6 +110,8 @@ class InferenceEngine {
       int? userThreads;
       int? userGpuLayers;
       bool userFlashAttention = true;
+      String? userCacheTypeK;
+      String? userCacheTypeV;
       try {
         if (Get.isRegistered<HiveService>()) {
           final hive = Get.find<HiveService>();
@@ -119,6 +121,8 @@ class InferenceEngine {
           if (g != null) userGpuLayers = g;
           final fa = hive.getSetting<bool>(AppConstants.keyEnableFlashAttention);
           if (fa != null) userFlashAttention = fa;
+          userCacheTypeK = hive.getSetting<String>(AppConstants.keyKvCacheTypeK);
+          userCacheTypeV = hive.getSetting<String>(AppConstants.keyKvCacheTypeV);
         }
       } catch (_) {}
 
@@ -129,6 +133,8 @@ class InferenceEngine {
         threads: userThreads,
         gpuLayers: userGpuLayers,
         flashAttention: userFlashAttention,
+        kvCacheTypeK: userCacheTypeK,
+        kvCacheTypeV: userCacheTypeV,
         mmprojPath: mmprojPath,
         onProgress: onProgress,
       );

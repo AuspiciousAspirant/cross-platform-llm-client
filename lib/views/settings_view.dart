@@ -753,6 +753,61 @@ class SettingsView extends GetView<SettingsController> {
         onChanged: (val) => controller.setEnableFlashAttention(val),
         activeColor: t.accent,
       ),
+      const Divider(height: 1),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('KV Cache Quantization (-ctk / -ctv)', style: t.bodyStrong),
+            Text(
+              switch (controller.kvCacheTypeK.value) {
+                'q4_0' => 'Q4_0 (-75% RAM)',
+                'q8_0' => 'Q8_0 (-50% RAM)',
+                _ => 'FP16 (Full)',
+              },
+              style: t.caption.copyWith(color: t.accent),
+            ),
+          ],
+        ),
+      ),
+      AppRow(
+        icon: Icons.high_quality_rounded,
+        title: 'FP16 (Full Precision)',
+        subtitle: 'Uncompressed key/value cache. Standard quality and RAM usage.',
+        selected: controller.kvCacheTypeK.value == 'f16',
+        onTap: () {
+          controller.setKvCacheTypeK('f16');
+          controller.setKvCacheTypeV('f16');
+        },
+      ),
+      AppRow(
+        icon: Icons.balance_rounded,
+        title: 'Q8_0 (Recommended · -50% RAM)',
+        subtitle: 'Quantizes KV cache to 8-bit. Halves cache memory with virtually zero quality loss.',
+        selected: controller.kvCacheTypeK.value == 'q8_0',
+        onTap: () {
+          controller.setKvCacheTypeK('q8_0');
+          controller.setKvCacheTypeV('q8_0');
+        },
+      ),
+      AppRow(
+        icon: Icons.compress_rounded,
+        title: 'Q4_0 (Extreme · -75% RAM)',
+        subtitle: 'Quantizes KV cache to 4-bit. Unlocks deep 8k–32k context on low-memory phone & PC clusters.',
+        selected: controller.kvCacheTypeK.value == 'q4_0',
+        onTap: () {
+          controller.setKvCacheTypeK('q4_0');
+          controller.setKvCacheTypeV('q4_0');
+        },
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: Text(
+          'Passes -ctk and -ctv flags to llama-server. Essential for long conversations on distributed LAN clusters.',
+          style: t.small,
+        ),
+      ),
     ]);
   }
 

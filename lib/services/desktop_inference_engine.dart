@@ -68,6 +68,37 @@ class DesktopInferenceEngine {
     return 'llama-server';
   }
 
+  /// Pure helper to assemble command-line flags for `llama-server`.
+  static List<String> buildServerArgs({
+    required String modelPath,
+    int contextSize = 4096,
+    int threads = 4,
+    int port = 50051,
+    String host = '127.0.0.1',
+    bool flashAttention = true,
+    String? kvCacheTypeK,
+    String? kvCacheTypeV,
+    int gpuLayers = 0,
+    List<String>? clusterEndpoints,
+    String? mmprojPath,
+  }) {
+    return [
+      '-m', modelPath,
+      '-c', '$contextSize',
+      '-t', '$threads',
+      '--port', '$port',
+      '--host', host,
+      if (flashAttention) '-fa',
+      if (kvCacheTypeK != null && kvCacheTypeK.isNotEmpty && kvCacheTypeK != 'f16')
+        ...['-ctk', kvCacheTypeK],
+      if (kvCacheTypeV != null && kvCacheTypeV.isNotEmpty && kvCacheTypeV != 'f16')
+        ...['-ctv', kvCacheTypeV],
+      if (gpuLayers > 0) ...['-ngl', '$gpuLayers'],
+      if (clusterEndpoints != null && clusterEndpoints.isNotEmpty) ...['--rpc', clusterEndpoints.join(',')],
+      if (mmprojPath != null && mmprojPath.isNotEmpty) ...['--mmproj', mmprojPath],
+    ];
+  }
+
   /// Returns the preferred directory to store or find local tools (`<workspace>/bin` or `<appSupport>/bin`).
   Future<String> getPreferredBinDir() async {
     try {
@@ -187,6 +218,8 @@ class DesktopInferenceEngine {
     int? threads,
     int? gpuLayers,
     bool flashAttention = true,
+    String? kvCacheTypeK,
+    String? kvCacheTypeV,
     String? mmprojPath,
     List<String>? clusterEndpoints,
     void Function(double progress)? onProgress,
@@ -249,17 +282,19 @@ class DesktopInferenceEngine {
     // Determine cluster RPC endpoints
     final effectiveEndpoints = clusterEndpoints ?? activeDesktopClusterEndpoints;
 
-    final args = <String>[
-      '-m', modelPath,
-      '-c', '$contextSize',
-      '-t', '$effectiveThreads',
-      '--port', '$_port',
-      '--host', '127.0.0.1',
-      if (flashAttention) '-fa',
-      if (_gpuLayers > 0) ...['-ngl', '$_gpuLayers'],
-      if (effectiveEndpoints.isNotEmpty) ...['--rpc', effectiveEndpoints.join(',')],
-      if (mmprojPath != null && mmprojPath.isNotEmpty) ...['--mmproj', mmprojPath],
-    ];
+    final args = buildServerArgs(
+      modelPath: modelPath,
+      contextSize: contextSize,
+      threads: effectiveThreads,
+      port: _port,
+      host: '127.0.0.1',
+      flashAttention: flashAttention,
+      kvCacheTypeK: kvCacheTypeK,
+      kvCacheTypeV: kvCacheTypeV,
+      gpuLayers: _gpuLayers,
+      clusterEndpoints: effectiveEndpoints,
+      mmprojPath: mmprojPath,
+    );
 
     debugPrint('[DesktopEngine] Launching $binary with args: ${args.join(' ')}');
     onProgress?.call(0.1);

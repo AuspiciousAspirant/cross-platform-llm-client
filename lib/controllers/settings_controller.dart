@@ -53,6 +53,8 @@ class SettingsController extends GetxController {
   final cpuThreads = AppConstants.defaultCpuThreads.obs;
   final gpuOffloadLayers = AppConstants.defaultGpuOffloadLayers.obs;
   final enableFlashAttention = AppConstants.defaultEnableFlashAttention.obs;
+  final kvCacheTypeK = AppConstants.defaultKvCacheType.obs;
+  final kvCacheTypeV = AppConstants.defaultKvCacheType.obs;
   final customModelsDirectory = ''.obs;
 
   final imageSteps = 1.obs;
@@ -220,6 +222,14 @@ class SettingsController extends GetxController {
             AppConstants.keyEnableFlashAttention,
             defaultValue: AppConstants.defaultEnableFlashAttention) ??
         AppConstants.defaultEnableFlashAttention;
+    kvCacheTypeK.value = _hive.getSetting(
+            AppConstants.keyKvCacheTypeK,
+            defaultValue: AppConstants.defaultKvCacheType) ??
+        AppConstants.defaultKvCacheType;
+    kvCacheTypeV.value = _hive.getSetting(
+            AppConstants.keyKvCacheTypeV,
+            defaultValue: AppConstants.defaultKvCacheType) ??
+        AppConstants.defaultKvCacheType;
     customModelsDirectory.value = _hive.getSetting(
             AppConstants.keyCustomModelsDirectory,
             defaultValue: '') ??
@@ -733,6 +743,16 @@ class SettingsController extends GetxController {
   Future<void> setEnableFlashAttention(bool value) async {
     enableFlashAttention.value = value;
     await _hive.setSetting(AppConstants.keyEnableFlashAttention, value);
+  }
+
+  Future<void> setKvCacheTypeK(String value) async {
+    kvCacheTypeK.value = value;
+    await _hive.setSetting(AppConstants.keyKvCacheTypeK, value);
+  }
+
+  Future<void> setKvCacheTypeV(String value) async {
+    kvCacheTypeV.value = value;
+    await _hive.setSetting(AppConstants.keyKvCacheTypeV, value);
   }
 
   Future<void> setCustomModelsDirectory(String value) async {

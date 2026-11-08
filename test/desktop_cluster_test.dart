@@ -107,6 +107,60 @@ void main() {
       expect(res.gpuLayers, 33);
       expect(res.gpuName, 'Vulkan GPU');
     });
+
+    test('buildServerArgs generates expected default flags', () {
+      final args = DesktopInferenceEngine.buildServerArgs(
+        modelPath: 'C:/models/qwen2.5-7b.gguf',
+        contextSize: 8192,
+        threads: 8,
+        port: 50051,
+      );
+
+      expect(args, contains('-m'));
+      expect(args, contains('C:/models/qwen2.5-7b.gguf'));
+      expect(args, contains('-c'));
+      expect(args, contains('8192'));
+      expect(args, contains('-t'));
+      expect(args, contains('8'));
+      expect(args, contains('-fa'));
+      expect(args.contains('-ctk'), isFalse);
+      expect(args.contains('-ctv'), isFalse);
+    });
+
+    test('buildServerArgs appends -ctk and -ctv flags for quantized KV cache', () {
+      final args = DesktopInferenceEngine.buildServerArgs(
+        modelPath: 'C:/models/llama-3.1-8b.gguf',
+        kvCacheTypeK: 'q8_0',
+        kvCacheTypeV: 'q8_0',
+        gpuLayers: 33,
+        clusterEndpoints: ['192.168.1.150:50052', '192.168.1.151:50052'],
+      );
+
+      expect(args, contains('-ctk'));
+      final ctkIndex = args.indexOf('-ctk');
+      expect(args[ctkIndex + 1], 'q8_0');
+
+      expect(args, contains('-ctv'));
+      final ctvIndex = args.indexOf('-ctv');
+      expect(args[ctvIndex + 1], 'q8_0');
+
+      expect(args, contains('-ngl'));
+      expect(args, contains('33'));
+
+      expect(args, contains('--rpc'));
+      expect(args, contains('192.168.1.150:50052,192.168.1.151:50052'));
+    });
+
+    test('buildServerArgs ignores -ctk and -ctv when set to f16 (standard unquantized)', () {
+      final args = DesktopInferenceEngine.buildServerArgs(
+        modelPath: 'C:/models/model.gguf',
+        kvCacheTypeK: 'f16',
+        kvCacheTypeV: 'f16',
+      );
+
+      expect(args.contains('-ctk'), isFalse);
+      expect(args.contains('-ctv'), isFalse);
+    });
   });
 
   group('GallerySaver Cross-Platform Tests', () {

@@ -865,7 +865,7 @@
     <div class="topbar-actions">
       <div class="progress-pill">
         <span class="status-dot"></span>
-        <span id="top-progress-text">9/9 Milestones Completed</span>
+        <span id="top-progress-text">10/10 Milestones Completed</span>
       </div>
       <button class="btn-icon" id="theme-toggle" title="Toggle Dark/Light Mode">
         <svg id="moon-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -920,7 +920,7 @@
         </a>
         <a href="#roadmap" class="nav-link">
           <span>3. Roadmap Steps</span>
-          <span class="nav-badge" id="nav-step-count">9/9</span>
+          <span class="nav-badge" id="nav-step-count">10/10</span>
         </a>
         <a href="#sizing" class="nav-link">
           <span>4. Hardware Sizing</span>
@@ -1139,6 +1139,22 @@ Production-grade observability and network resilience:
 - **Automated Test Suite**: Added unit tests in `test/lan_discovery_test.dart` verifying `ClusterShare` layer ranges, copyWith immutability, and 32-layer allocation integrity.
 </Step>
 
+<Step>
+### Step 10: Quantized Key-Value Cache Controls & Extended Context Resilience [COMPLETED]
+
+Fine-grained memory optimization for long-context inference on distributed nodes:
+
+- **KV Cache Quantization (`-ctk` & `-ctv`)**: Added dynamic controls in `SettingsView` for `FP16` (full precision), `Q8_0` (recommended · 50% RAM reduction), and `Q4_0` (extreme · 75% RAM reduction).
+- **Engine Daemon Flag Forwarding**: `DesktopInferenceEngine` and `InferenceEngine` dynamically pass `-ctk <type>` and `-ctv <type>` to `llama-server`.
+- **Pure Argument Builder (`buildServerArgs`)**: Added pure functional parameter compiler on `DesktopInferenceEngine` ensuring deterministic flag creation and isolation testing.
+- **Automated Test Suite**: Added tests in `test/desktop_cluster_test.dart` validating `-ctk` and `-ctv` generation, `f16` default omission, `--rpc` endpoint formatting, and `-fa` flags.
+
+#### Architecture Decision Record (ADR): Why Quantized KV Cache Was Prioritized
+> **Decision Rationale**: In distributed LAN clusters (such as a Windows PC Master offloading layers to an Android phone worker), the attention KV cache scales linearly with conversation depth:
+> $$\text{RAM}_{\text{KV}} = 2 \times n_{\text{layers}} \times n_{\text{heads\_kv}} \times d_{\text{head}} \times n_{\text{ctx}} \times \text{bytes\_per\_elem}$$
+> At 8k–16k token contexts, unquantized FP16 KV cache consumes 4 GB to 10 GB of RAM. Mobile operating systems enforce aggressive OOM (Out-of-Memory) Low Memory Killer (LMK) policies that silently terminate worker daemons when RAM exceeds budget. Prioritizing **Q8_0** (cutting KV memory by 50% with near-zero perplexity loss) and **Q4_0** (75% savings) ensures worker stability and prevents mid-conversation node disconnects during extended sessions.
+</Step>
+
 </Steps>
 
 ---
@@ -1168,8 +1184,8 @@ Production-grade observability and network resilience:
     let currentTheme = localStorage.getItem(STORAGE_KEY_THEME) || 'dark';
     let milestoneChecked = JSON.parse(localStorage.getItem(STORAGE_KEY_CHECKED) || '{}');
 
-    // Default: all 9 completed
-    for (let i = 1; i <= 9; i++) {
+    // Default: all 10 completed
+    for (let i = 1; i <= 10; i++) {
       if (milestoneChecked[i] === undefined) {
         milestoneChecked[i] = true;
       }
@@ -1568,7 +1584,7 @@ Production-grade observability and network resilience:
     }
 
     function updateMilestoneCounters() {
-      const total = 9;
+      const total = 10;
       const completed = Object.values(milestoneChecked).filter(Boolean).length;
       const progressText = `${completed}/${total} Milestones Completed (${Math.round((completed / total) * 100)}%)`;
       const topProgress = document.getElementById('top-progress-text');
