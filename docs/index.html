@@ -865,7 +865,7 @@
     <div class="topbar-actions">
       <div class="progress-pill">
         <span class="status-dot"></span>
-        <span id="top-progress-text">11/11 Milestones Completed</span>
+        <span id="top-progress-text">11/14 Milestones Completed (79%)</span>
       </div>
       <button class="btn-icon" id="theme-toggle" title="Toggle Dark/Light Mode">
         <svg id="moon-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -920,7 +920,7 @@
         </a>
         <a href="#roadmap" class="nav-link">
           <span>3. Roadmap Steps</span>
-          <span class="nav-badge" id="nav-step-count">11/11</span>
+          <span class="nav-badge" id="nav-step-count">11/14</span>
         </a>
         <a href="#sizing" class="nav-link">
           <span>4. Hardware Sizing</span>
@@ -1165,6 +1165,36 @@ Zero-friction automated runtime installation across desktop platforms:
 - **Unified Engine Installer (`DesktopEngineManager.downloadAndInstallEngine`)**: Automated download from official `ggml-org/llama.cpp` releases unpacking both `llama-server` and `rpc-server` plus all runtime dynamic libraries (`.dll`, `.so`, `.dylib`) in a single step.
 - **Unified Setup Card Component (`UnifiedEngineSetupCard`)**: Embedded in `ClusterView` and `SettingsView` with live hardware spec badges, dual binary status chips (`llama-server` & `rpc-server`), download progress bar, and 1-click install.
 - **Automated Test Suite**: Added unit tests in `test/desktop_cluster_test.dart` validating binary name resolution, `EngineBinaryStatus` state transitions, `EngineBackendFlavor` naming, and `GpuDetectionResult` data structures.
+</Step>
+
+<Step>
+### Step 12: Mobile Worker Ambient Mode & Wi-Fi Keepalive Protection [PLANNED]
+
+Prevent mobile OS aggressive background throttling and Wi-Fi power-save sleep:
+
+- **Automatic High-Performance Wake-Lock**: Acquire wake-locks (`LlamaCluster.setKeepScreenOn(true)`) and Wi-Fi high-perf mode when the device enters `ClusterRole.worker`.
+- **Ambient OLED Worker View**: Ultra-low-power dim interface showing live node statistics (holding layers, RAM allocation, memory speed, IP address, and port 50052 status) while keeping the Wi-Fi modem and CPU threads active.
+- **Clean Platform Isolation**: Ensure mobile wake-lock channels are strictly guarded and never executed on desktop platforms.
+</Step>
+
+<Step>
+### Step 13: 1-Click Distributed Cluster Benchmark & Throughput Comparator [PLANNED]
+
+Empirical performance measurement and hardware verification:
+
+- **Standardized Synthetic Inference Benchmark**: Runs a controlled 128 prompt + 128 generation token benchmark across the distributed pipeline.
+- **Observed Metrics**: Time-To-First-Token (TTFT), prompt evaluation speed (`tok/s`), token generation throughput (`tok/s`), and network packet latency.
+- **Comparative Throughput Graph**: Side-by-side visual comparison in `ClusterView` showing Local Master Execution vs LAN Distributed Execution.
+</Step>
+
+<Step>
+### Step 14: Local OpenAI Server Gateway & External Developer Tools Integration [PLANNED]
+
+Expose the distributed cluster to external AI tooling over the local network:
+
+- **Cluster-Aware API Gateway**: Wire `OpenAiServerService` (`/v1/chat/completions`, `/v1/models`) to proxy seamlessly through the active distributed cluster pipeline.
+- **1-Click Developer Integration**: Interactive drawer with copy-paste connection snippets for Cursor, Open WebUI, Obsidian, and Continue (`baseURL: http://<lan-ip>:8080/v1` + API bearer token).
+- **Network Discovery**: Broadcast API service metadata over LAN for instant zero-config client discovery.
 </Step>
 
 </Steps>
@@ -1596,7 +1626,7 @@ Zero-friction automated runtime installation across desktop platforms:
     }
 
     function updateMilestoneCounters() {
-      const total = 11;
+      const total = 14;
       const completed = Object.values(milestoneChecked).filter(Boolean).length;
       const progressText = `${completed}/${total} Milestones Completed (${Math.round((completed / total) * 100)}%)`;
       const topProgress = document.getElementById('top-progress-text');
