@@ -1,4 +1,9 @@
+import 'dart:io' show Platform, Socket;
 import 'package:flutter/services.dart';
+
+List<String> activeDesktopClusterEndpoints = [];
+List<double> activeDesktopClusterWeights = [];
+double activeDesktopClusterLocalWeight = 1.0;
 
 /// A phone running as a cluster worker, found on the local network, scanned
 /// from its QR code, or added by hand.
@@ -128,24 +133,44 @@ class LlamaCluster {
 
   /// Android: asks to exempt the app from battery optimization, so a busy
   /// worker isn't moved to slow cores. No-op if already exempt.
-  static Future<void> requestBatteryUnrestricted() =>
-      _channel.invokeMethod('requestBatteryUnrestricted');
+  static Future<void> requestBatteryUnrestricted() {
+    if (!Platform.isAndroid) return Future.value();
+    return _channel.invokeMethod('requestBatteryUnrestricted');
+  }
 
   /// Keeps this device's screen on (a worker runs at full speed only while
   /// PrivateLM is on screen).
-  static Future<void> setKeepScreenOn(bool on) =>
-      _channel.invokeMethod('setKeepScreenOn', {'on': on});
+  static Future<void> setKeepScreenOn(bool on) {
+    if (!Platform.isAndroid && !Platform.isIOS) return Future.value();
+    return _channel.invokeMethod('setKeepScreenOn', {'on': on});
+  }
 
-  static Future<int> localFreeRamMb() async =>
-      await _channel.invokeMethod<int>('localFreeRamMb') ?? 0;
+  static Future<int> localFreeRamMb() async {
+    if (!Platform.isAndroid && !Platform.isIOS) return 0;
+    return await _channel.invokeMethod<int>('localFreeRamMb') ?? 0;
+  }
 
   /// This phone's memory read speed in GB/s (~0.2 s to measure).
-  static Future<double> benchmark() async =>
-      await _channel.invokeMethod<double>('benchmark') ?? 0;
+  static Future<double> benchmark() async {
+    if (!Platform.isAndroid && !Platform.isIOS) return 0;
+    return await _channel.invokeMethod<double>('benchmark') ?? 0;
+  }
 
   /// Where the last model load put its weights: llama.cpp buffer name
   /// ("CPU_Mapped", "RPC0[host:port]", …) and size in MB.
   static Future<List<({String name, double mb})>> lastLoadBuffers() async {
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      return [
+        if (activeDesktopClusterEndpoints.isNotEmpty)
+          for (int i = 0; i < activeDesktopClusterEndpoints.length; i++)
+            (
+              name: 'RPC$i[${activeDesktopClusterEndpoints[i]}]',
+              mb: activeDesktopClusterWeights.length > i
+                  ? activeDesktopClusterWeights[i]
+                  : 1024.0,
+            ),
+      ];
+    }
     final list = await _channel.invokeListMethod<Map<dynamic, dynamic>>('lastLoadBuffers');
     return [
       for (final m in list ?? const [])
@@ -156,15 +181,29 @@ class LlamaCluster {
   /// Looks for workers on the local network for [timeout].
   static Future<List<ClusterWorker>> discover(
       {Duration timeout = const Duration(seconds: 4)}) async {
+    if (!Platform.isAndroid && !Platform.isIOS) return [];
     final list = await _channel.invokeListMethod<Map<dynamic, dynamic>>(
         'discover', {'timeoutMs': timeout.inMilliseconds});
     return (list ?? const []).map(ClusterWorker.fromMap).toList();
   }
 
   /// Whether something answers on [endpoint] ("host:port").
-  static Future<bool> probe(String endpoint) async =>
-      await _channel.invokeMethod<bool>('probe', {'endpoint': endpoint}) ??
-      false;
+  static Future<bool> probe(String endpoint) async {
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      try {
+        final parts = endpoint.split(':');
+        final host = parts[0];
+        final port = int.tryParse(parts.length > 1 ? parts[1] : '') ?? defaultPort;
+        final socket = await Socket.connect(host, port, timeout: const Duration(seconds: 2));
+        socket.destroy();
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+    return await _channel.invokeMethod<bool>('probe', {'endpoint': endpoint}) ??
+        false;
+  }
 
   /// Uses [workers] for the next GGUF model load. Layers are split by
   /// [weights] (one per worker, e.g. MB to hold), with this phone keeping a
@@ -174,12 +213,19 @@ class LlamaCluster {
     List<ClusterWorker> workers, {
     List<double>? weights,
     double localWeight = 1.0,
-  }) =>
-      _channel.invokeMethod('setCluster', {
-        'endpoints': [for (final w in workers) w.endpoint],
-        'weights': weights ?? List.filled(workers.length, 1.0),
-        'localWeight': localWeight,
-      });
+  }) {
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      activeDesktopClusterEndpoints = [for (final w in workers) w.endpoint];
+      activeDesktopClusterWeights = weights ?? List.filled(workers.length, 1.0);
+      activeDesktopClusterLocalWeight = localWeight;
+      return Future.value();
+    }
+    return _channel.invokeMethod('setCluster', {
+      'endpoints': [for (final w in workers) w.endpoint],
+      'weights': weights ?? List.filled(workers.length, 1.0),
+      'localWeight': localWeight,
+    });
+  }
 
   static Future<void> clear() => setCluster(const []);
 }

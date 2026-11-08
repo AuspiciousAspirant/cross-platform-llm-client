@@ -65,7 +65,7 @@ class InferenceService extends GetxService {
     String? mmprojPath,
   }) async {
     if (!supportsLocalInference) {
-      return 'ERROR: Local inference is not available on this platform. Use Cloud mode.';
+      return 'ERROR: Local inference is not yet supported on this desktop platform. Use Cloud mode or connect as a LAN cluster worker.';
     }
     if (isLoadingModel.value) return 'ERROR: Model is already loading.';
 
@@ -206,7 +206,7 @@ class InferenceService extends GetxService {
       if (clusterWorkers > 0) {
         final cluster = Get.find<ClusterService>();
         await cluster.refreshSplit(modelPath);
-        return 'Model loaded across ${cluster.splitSummary ?? '${clusterWorkers + 1} phones'}.';
+        return 'Model loaded across ${cluster.splitSummary ?? '${clusterWorkers + 1} devices'}.';
       }
       return result.message;
     } catch (e) {

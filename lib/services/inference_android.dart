@@ -4,15 +4,22 @@ import 'dart:io' show Platform, Directory, File;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_litert_lm/flutter_litert_lm.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
+import 'desktop_inference_engine.dart';
 
 /// Whether the current platform supports local inference.
-bool get supportsLocalInference => Platform.isAndroid || Platform.isIOS;
+bool get supportsLocalInference =>
+    Platform.isAndroid ||
+    Platform.isIOS ||
+    Platform.isWindows ||
+    Platform.isLinux ||
+    Platform.isMacOS;
 
 /// True when the app runs as a 32-bit process (32-bit Android, e.g. Android
 /// Go phones). LiteRT ships 64-bit only, and the address space limits model
 /// size.
 bool get isRunning32Bit =>
-    Abi.current() == Abi.androidArm || Abi.current() == Abi.androidIA32;
+    Platform.isAndroid &&
+    (Abi.current() == Abi.androidArm || Abi.current() == Abi.androidIA32);
 
 Future<int> fileLength(String path) => File(path).length();
 
@@ -34,11 +41,12 @@ class LoadResult {
   });
 }
 
-/// Android & iOS inference engine — wraps llama_flutter_android.
+/// Android, iOS & Desktop inference engine — wraps llama_flutter_android and DesktopInferenceEngine.
 class InferenceEngine {
   LlamaController? _controller;
   LiteLmEngine? _liteEngine;
   LiteLmConversation? _liteConversation;
+  DesktopInferenceEngine? _desktopEngine;
   StreamSubscription? _subscription;
   StreamSubscription? _loadProgressSub;
   Timer? _idleTimer;
@@ -46,7 +54,7 @@ class InferenceEngine {
   bool _isLiteRt = false;
   // GGUF model loaded together with a working vision projector.
   bool _ggufVisionLoaded = false;
-  bool get ggufVisionLoaded => _ggufVisionLoaded;
+  bool get ggufVisionLoaded => _desktopEngine?.ggufVisionLoaded ?? _ggufVisionLoaded;
   bool _disposed = false;
   bool _hasLoadedModel = false;
   String? _liteConversationSystemPrompt;
@@ -71,6 +79,13 @@ class InferenceEngine {
     void Function(double)? onProgress,
   }) async {
     _disposed = false;
+    if (!supportsLocalInference) {
+      return LoadResult(
+        success: false,
+        message:
+            'Local inference is not yet supported on this platform. Use Cloud mode or connect as a cluster worker.',
+      );
+    }
     final runtime = _runtimeFor(modelPath, modelRuntime);
     if (runtime == 'litert') {
       return _loadLiteRtModel(
@@ -81,6 +96,29 @@ class InferenceEngine {
         clearCache: clearLiteRtCache,
         enableVision: enableLiteRtVision,
         onProgress: onProgress,
+      );
+    }
+
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      _isLiteRt = false;
+      _controller = null;
+      _desktopEngine = DesktopInferenceEngine();
+      final dRes = await _desktopEngine!.loadModel(
+        modelPath: modelPath,
+        contextSize: contextSize,
+        allowGpu: allowGgufGpu,
+        mmprojPath: mmprojPath,
+        onProgress: onProgress,
+      );
+      _hasLoadedModel = dRes.success;
+      _ggufVisionLoaded = _desktopEngine!.ggufVisionLoaded;
+      return LoadResult(
+        success: dRes.success,
+        message: dRes.message,
+        gpuName: dRes.gpuName,
+        gpuLayers: dRes.gpuLayers,
+        runtime: dRes.runtime,
+        backend: dRes.backend,
       );
     }
 
@@ -356,6 +394,18 @@ class InferenceEngine {
         imagePath: imagePath,
         audioPath: audioPath,
         source: source,
+        onToken: onToken,
+      );
+    }
+
+    if (_desktopEngine != null) {
+      return _desktopEngine!.generate(
+        prompt: prompt,
+        conversationHistory: conversationHistory,
+        systemPrompt: systemPrompt,
+        maxTokens: maxTokens,
+        temperature: temperature,
+        imagePath: imagePath,
         onToken: onToken,
       );
     }
@@ -712,6 +762,10 @@ class InferenceEngine {
     _onStop = null;
     stopCallback?.call();
     unawaited(_subscription?.cancel() ?? Future<void>.value());
+    if (_desktopEngine != null) {
+      await _desktopEngine!.stop();
+      return;
+    }
     if (_isLiteRt) {
       _liteConversationHasMessages = true;
       try {
@@ -727,6 +781,9 @@ class InferenceEngine {
   /// Reset any persistent conversation state so the next generation
   /// starts with a clean context. Essential when switching chat sessions.
   Future<void> resetConversation() async {
+    if (_desktopEngine != null) {
+      return;
+    }
     if (_isLiteRt) {
       try {
         await _liteConversation?.dispose();
@@ -742,6 +799,9 @@ class InferenceEngine {
   }
 
   Future<ContextInfo?> getContextInfo() async {
+    if (_desktopEngine != null) {
+      return await _desktopEngine!.getContextInfo();
+    }
     if (_isLiteRt) return null;
     try {
       return await _controller?.getContextInfo();
@@ -754,6 +814,10 @@ class InferenceEngine {
     if (_disposed) return;
     await stop();
     _disposed = true;
+    try {
+      await _desktopEngine?.dispose();
+    } catch (_) {}
+    _desktopEngine = null;
     if (_hasLoadedModel) {
       try {
         await _controller?.dispose();
