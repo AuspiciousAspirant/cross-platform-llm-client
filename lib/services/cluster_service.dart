@@ -743,30 +743,30 @@ class ClusterService extends GetxService {
     return go == true;
   }
 
-  /// "Fits on this phone" sheet. True to share with workers anyway.
+  /// "Fits on this device" sheet. True to share with workers anyway.
   Future<bool> _askFitsHere(String model, double modelMb, int workerCount) async {
     final context = Get.context;
     if (context == null) return false;
+    final deviceLabel = isDesktop ? 'this PC' : 'this device';
     final share = await showAppSheet<bool>(
       context,
-      title: 'This model fits on this phone',
-      subtitle: '${model.replaceAll(RegExp(r'\.gguf$'), '')} needs about '
-          '${_gb(modelMb)}, and this phone has room for it. Running it here '
-          'is faster, because sharing sends every word over Wi-Fi. Share it '
-          'to free up memory on this phone.',
+      title: 'Distribute Model Across LAN Cluster?',
+      subtitle: '${model.replaceAll(RegExp(r'\.gguf$'), '')} (${_gb(modelMb)}) fits within $deviceLabel\'s RAM. '
+          'You can share its computation across your $workerCount connected worker${workerCount == 1 ? '' : 's'} to offload memory and GPU load, '
+          'or run it entirely locally on $deviceLabel.',
       builder: (ctx) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           PrimaryButton(
-            label: 'Load on this phone only',
-            icon: Icons.smartphone_rounded,
-            onPressed: () => Navigator.pop(ctx, false),
+            label: 'Share with $workerCount LAN worker${workerCount == 1 ? '' : 's'}',
+            icon: Icons.hub_rounded,
+            onPressed: () => Navigator.pop(ctx, true),
           ),
           const SizedBox(height: 10),
           TonalButton.neutral(
             ctx,
-            label: 'Share with $workerCount worker${workerCount == 1 ? '' : 's'}',
-            onTap: () => Navigator.pop(ctx, true),
+            label: 'Run locally on $deviceLabel only',
+            onTap: () => Navigator.pop(ctx, false),
           ),
         ],
       ),

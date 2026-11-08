@@ -104,8 +104,8 @@ if (-not (Test-Path "$buildOutput\privatelm.exe")) {
 Write-Host "`n[4/4] Assembling standalone distribution package..." -ForegroundColor Cyan
 $distDir = "$projectRoot\dist\PrivateLM-Windows-x64"
 
-# Stop any running PrivateLM instance so binaries and DLLs can be updated cleanly
-Get-Process privatelm -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+# Stop any running PrivateLM / llama processes so binaries and DLLs can be updated cleanly
+Get-Process privatelm, llama-server, ggml-rpc-server, rpc-server -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 600
 
 if (Test-Path "$distDir\bin") {
@@ -143,7 +143,13 @@ foreach ($so in $appSoCandidates) {
 if (Test-Path "$projectRoot\bin") {
     $targetBin = "$distDir\bin"
     New-Item -ItemType Directory -Force -Path $targetBin | Out-Null
-    Copy-Item -Path "$projectRoot\bin\*" -Destination $targetBin -Recurse -Force -ErrorAction SilentlyContinue
+    Get-ChildItem -Path "$projectRoot\bin\*" | ForEach-Object {
+        try {
+            Copy-Item -Path $_.FullName -Destination $targetBin -Force -ErrorAction Stop
+        } catch {
+            Write-Warning "Skipped locked binary: $($_.Name)"
+        }
+    }
     Write-Host "-> Bundled local engine binaries into distribution bin/ directory." -ForegroundColor Green
 }
 
