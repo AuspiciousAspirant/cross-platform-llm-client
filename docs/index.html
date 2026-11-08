@@ -1,0 +1,1795 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PrivateLM · Cross-Platform LAN-Distributed LLM Architecture Plan</title>
+  <meta name="description" content="Interactive architecture plan, distributed inference engine roadmap, and cluster layer calculator for PrivateLM.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230B0F19'/><path d='M25 50h50M50 25v50M32 32l36 36M68 32L32 68' stroke='%2306B6D4' stroke-width='8' stroke-linecap='round'/><circle cx='50' cy='50' r='14' fill='%2310B981'/></svg>">
+
+  <!-- Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- KaTeX Math Rendering -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+
+  <!-- Prism.js Syntax Highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css">
+
+  <style>
+    :root {
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+      /* Dark Theme (Default) */
+      --bg-canvas: #0b0f19;
+      --bg-surface: #111827;
+      --bg-surface-elevated: #161f30;
+      --bg-subtle: #1e293b;
+      --border-hairline: rgba(255, 255, 255, 0.08);
+      --border-medium: rgba(255, 255, 255, 0.16);
+      --border-highlight: rgba(6, 182, 212, 0.4);
+
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --text-inverted: #0b0f19;
+
+      --accent-cyan: #06b6d4;
+      --accent-cyan-bg: rgba(6, 182, 212, 0.12);
+      --accent-emerald: #10b981;
+      --accent-emerald-bg: rgba(16, 185, 129, 0.12);
+      --accent-amber: #f59e0b;
+      --accent-amber-bg: rgba(245, 158, 11, 0.12);
+      --accent-violet: #8b5cf6;
+      --accent-violet-bg: rgba(139, 92, 246, 0.12);
+
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+      --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
+
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --radius-full: 9999px;
+    }
+
+    [data-theme="light"] {
+      --bg-canvas: #f8fafc;
+      --bg-surface: #ffffff;
+      --bg-surface-elevated: #f1f5f9;
+      --bg-subtle: #e2e8f0;
+      --border-hairline: rgba(0, 0, 0, 0.08);
+      --border-medium: rgba(0, 0, 0, 0.16);
+      --border-highlight: rgba(6, 182, 212, 0.5);
+
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #94a3b8;
+      --text-inverted: #ffffff;
+
+      --accent-cyan: #0891b2;
+      --accent-cyan-bg: rgba(8, 145, 178, 0.08);
+      --accent-emerald: #059669;
+      --accent-emerald-bg: rgba(5, 150, 105, 0.08);
+      --accent-amber: #d97706;
+      --accent-amber-bg: rgba(217, 119, 6, 0.08);
+      --accent-violet: #7c3aed;
+      --accent-violet-bg: rgba(124, 58, 237, 0.08);
+
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+      --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-canvas);
+      color: var(--text-primary);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow-x: hidden;
+    }
+
+    /* Top Navigation Bar */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(17, 24, 39, 0.88);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-hairline);
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+    }
+    [data-theme="light"] .topbar {
+      background: rgba(255, 255, 255, 0.9);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-primary);
+    }
+    .brand-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-hairline);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent-cyan);
+    }
+    .brand-title {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand-tag {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      background: var(--accent-emerald-bg);
+      color: var(--accent-emerald);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+    }
+
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .progress-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: var(--bg-surface-elevated);
+      padding: 6px 14px;
+      border-radius: var(--radius-full);
+      border: 1px solid var(--border-hairline);
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-emerald);
+      box-shadow: 0 0 8px var(--accent-emerald);
+    }
+
+    .btn-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-md);
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-hairline);
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-icon:hover {
+      color: var(--text-primary);
+      border-color: var(--border-medium);
+      background: var(--bg-subtle);
+    }
+
+    /* Main Grid Layout */
+    .app-layout {
+      display: flex;
+      min-height: calc(100vh - 64px);
+    }
+
+    /* Sidebar Navigation */
+    .sidebar {
+      width: 300px;
+      flex-shrink: 0;
+      position: sticky;
+      top: 64px;
+      height: calc(100vh - 64px);
+      overflow-y: auto;
+      padding: 24px 16px;
+      border-right: 1px solid var(--border-hairline);
+      background: var(--bg-surface);
+    }
+
+    .sidebar-section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin: 18px 8px 8px 8px;
+    }
+
+    .nav-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      margin-bottom: 2px;
+      border-radius: var(--radius-md);
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.15s ease;
+    }
+    .nav-link:hover {
+      color: var(--text-primary);
+      background: var(--bg-subtle);
+    }
+    .nav-link.active {
+      color: var(--accent-cyan);
+      background: var(--accent-cyan-bg);
+      font-weight: 600;
+    }
+    .nav-badge {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: var(--radius-full);
+      background: var(--bg-subtle);
+      color: var(--text-muted);
+    }
+    .nav-link.active .nav-badge {
+      background: var(--accent-cyan);
+      color: #ffffff;
+    }
+
+    /* Progress Filter */
+    .filter-pills {
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      background: var(--bg-subtle);
+      border-radius: var(--radius-md);
+      margin-bottom: 16px;
+    }
+    .filter-btn {
+      flex: 1;
+      padding: 6px 0;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: center;
+    }
+    .filter-btn.active {
+      background: var(--bg-surface-elevated);
+      color: var(--text-primary);
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* Search Input */
+    .search-box {
+      position: relative;
+      margin-bottom: 16px;
+    }
+    .search-input {
+      width: 100%;
+      padding: 8px 12px 8px 34px;
+      border-radius: var(--radius-md);
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-hairline);
+      color: var(--text-primary);
+      font-size: 13px;
+      font-family: var(--font-sans);
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+    .search-input:focus {
+      border-color: var(--accent-cyan);
+    }
+    .search-icon {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    /* Content Area */
+    .content-area {
+      flex: 1;
+      min-width: 0;
+      padding: 40px 48px 100px 48px;
+      display: flex;
+      justify-content: center;
+    }
+    .content-wrapper {
+      width: 100%;
+      max-width: 880px;
+    }
+
+    /* Metadata Header Banner */
+    .hero-banner {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: var(--radius-lg);
+      padding: 32px;
+      margin-bottom: 36px;
+      box-shadow: var(--shadow-md);
+      position: relative;
+      overflow: hidden;
+    }
+    .hero-banner::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: linear-gradient(180deg, var(--accent-cyan), var(--accent-emerald));
+    }
+    .hero-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+    .tag-pill {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      padding: 2px 10px;
+      border-radius: var(--radius-full);
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-hairline);
+      color: var(--text-secondary);
+    }
+    .hero-title {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.25;
+      color: var(--text-primary);
+      margin-bottom: 12px;
+    }
+    .hero-description {
+      font-size: 16px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-hairline);
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .hero-meta-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .hero-meta strong {
+      color: var(--text-primary);
+    }
+
+    /* Feature Cards Grid (<Cards>) */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin: 28px 0;
+    }
+    .feature-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+    .feature-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--border-medium);
+      box-shadow: var(--shadow-sm);
+    }
+    .feature-card-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .feature-card-desc {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    /* Section Styling */
+    h2 {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.015em;
+      margin: 48px 0 16px 0;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      scroll-margin-top: 80px;
+    }
+    h3 {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin: 28px 0 12px 0;
+      color: var(--text-primary);
+      scroll-margin-top: 80px;
+    }
+    p {
+      margin-bottom: 16px;
+      color: var(--text-secondary);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+    strong {
+      color: var(--text-primary);
+    }
+
+    hr {
+      border: none;
+      height: 1px;
+      background: var(--border-hairline);
+      margin: 40px 0;
+    }
+
+    /* Markdown Tables */
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 24px 0;
+      border: 1px solid var(--border-hairline);
+      border-radius: var(--radius-md);
+      background: var(--bg-surface);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+      text-align: left;
+    }
+    th {
+      background: var(--bg-surface-elevated);
+      color: var(--text-primary);
+      font-weight: 600;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-hairline);
+    }
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-hairline);
+      color: var(--text-secondary);
+    }
+    tr:last-child td {
+      border-bottom: none;
+    }
+    tr:hover td {
+      background: var(--bg-subtle);
+    }
+
+    /* Callout Card */
+    .callout {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-left: 4px solid var(--accent-cyan);
+      border-radius: var(--radius-md);
+      padding: 18px 20px;
+      margin: 24px 0;
+      font-size: 14px;
+    }
+
+    /* Mermaid Container */
+    .mermaid-container {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: var(--radius-lg);
+      padding: 28px;
+      margin: 28px 0;
+      display: flex;
+      justify-content: center;
+      overflow-x: auto;
+      box-shadow: var(--shadow-sm);
+    }
+    .mermaid {
+      max-width: 100%;
+      text-align: center;
+    }
+
+    /* Roadmap Timeline & Steps */
+    .steps-timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      margin: 28px 0;
+    }
+    .step-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+    .step-card:hover {
+      border-color: var(--border-medium);
+      box-shadow: var(--shadow-sm);
+    }
+    .step-card.completed {
+      border-left: 4px solid var(--accent-emerald);
+    }
+    .step-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+    .step-title-area {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .step-number {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-hairline);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+    .step-card.completed .step-number {
+      background: var(--accent-emerald-bg);
+      color: var(--accent-emerald);
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+    .step-heading {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+    .step-badge {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: var(--radius-full);
+      background: var(--accent-emerald-bg);
+      color: var(--accent-emerald);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      flex-shrink: 0;
+    }
+    .step-card-checkbox {
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+      accent-color: var(--accent-emerald);
+      border-radius: 4px;
+    }
+    .step-body {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.65;
+    }
+    .step-body ul {
+      margin-left: 20px;
+      margin-top: 10px;
+    }
+    .step-body li {
+      margin-bottom: 6px;
+    }
+    .step-body code {
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-hairline);
+      padding: 2px 6px;
+      border-radius: var(--radius-sm);
+      color: var(--accent-cyan);
+    }
+
+    /* Cluster Calculator Widget */
+    .calculator-widget {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: var(--radius-lg);
+      padding: 28px;
+      margin: 36px 0;
+      box-shadow: var(--shadow-md);
+    }
+    .calc-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+    .calc-title {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .calc-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    .calc-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .calc-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      display: flex;
+      justify-content: space-between;
+    }
+    .calc-select, .calc-input {
+      padding: 10px 14px;
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-hairline);
+      border-radius: var(--radius-md);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+    .calc-select:focus, .calc-input:focus {
+      border-color: var(--accent-cyan);
+    }
+    .calc-range {
+      width: 100%;
+      accent-color: var(--accent-cyan);
+      cursor: pointer;
+    }
+    .calc-toggle {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-top: 10px;
+    }
+    .calc-toggle input {
+      accent-color: var(--accent-cyan);
+      width: 16px;
+      height: 16px;
+    }
+
+    /* Calculator Results Visualizer */
+    .calc-results {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-hairline);
+      border-radius: var(--radius-md);
+      padding: 20px;
+    }
+    .layer-bar-container {
+      margin-bottom: 16px;
+    }
+    .layer-bar-label {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .layer-bar {
+      display: flex;
+      height: 28px;
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-hairline);
+    }
+    .layer-slice {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: #ffffff;
+      transition: width 0.3s ease;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    }
+    .layer-slice.master {
+      background: linear-gradient(90deg, #0284c7, var(--accent-cyan));
+    }
+    .layer-slice.worker1 {
+      background: linear-gradient(90deg, #059669, var(--accent-emerald));
+    }
+    .layer-slice.worker2 {
+      background: linear-gradient(90deg, #d97706, var(--accent-amber));
+    }
+
+    .calc-metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .metric-pill {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+    }
+    .metric-title {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .metric-val {
+      font-family: var(--font-mono);
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+    .calc-status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: var(--radius-full);
+      margin-top: 12px;
+    }
+    .status-feasible {
+      background: var(--accent-emerald-bg);
+      color: var(--accent-emerald);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .status-infeasible {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    /* Code Blocks */
+    pre[class*="language-"] {
+      border-radius: var(--radius-md) !important;
+      border: 1px solid var(--border-hairline) !important;
+      background: var(--bg-surface) !important;
+      margin: 18px 0 !important;
+      padding: 18px !important;
+      font-family: var(--font-mono) !important;
+      font-size: 13px !important;
+    }
+
+    /* Print styles */
+    @media print {
+      .topbar, .sidebar {
+        display: none !important;
+      }
+      .content-area {
+        padding: 0 !important;
+      }
+      .content-wrapper {
+        max-width: 100% !important;
+      }
+      body {
+        background: #ffffff !important;
+        color: #000000 !important;
+      }
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 900px) {
+      .sidebar {
+        display: none;
+      }
+      .content-area {
+        padding: 24px 16px;
+      }
+      .hero-title {
+        font-size: 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <a href="#" class="brand">
+      <div class="brand-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+          <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+          <line x1="6" y1="6" x2="6.01" y2="6"></line>
+          <line x1="6" y1="18" x2="6.01" y2="18"></line>
+        </svg>
+      </div>
+      <div class="brand-title">
+        PrivateLM
+        <span class="brand-tag">LAN Cluster v1.0.7</span>
+      </div>
+    </a>
+
+    <div class="topbar-actions">
+      <div class="progress-pill">
+        <span class="status-dot"></span>
+        <span id="top-progress-text">9/9 Milestones Completed</span>
+      </div>
+      <button class="btn-icon" id="theme-toggle" title="Toggle Dark/Light Mode">
+        <svg id="moon-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
+        <svg id="sun-icon" style="display:none;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+          <line x1="1" y1="12" x2="3" y2="12"></line>
+          <line x1="21" y1="12" x2="23" y2="12"></line>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- App Layout -->
+  <div class="app-layout">
+    <!-- Desktop Sidebar -->
+    <aside class="sidebar">
+      <div class="search-box">
+        <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="roadmap-search" class="search-input" placeholder="Search roadmap & steps...">
+      </div>
+
+      <div class="filter-pills">
+        <button class="filter-btn active" data-filter="all">All (9)</button>
+        <button class="filter-btn" data-filter="completed">Done (9)</button>
+        <button class="filter-btn" data-filter="pending">Pending (0)</button>
+      </div>
+
+      <div class="sidebar-section-title">Navigation</div>
+      <nav id="sidebar-nav">
+        <a href="#overview" class="nav-link active">
+          <span>Overview</span>
+          <span class="nav-badge">LAN</span>
+        </a>
+        <a href="#architecture" class="nav-link">
+          <span>1. Architecture</span>
+          <span class="nav-badge">RPC</span>
+        </a>
+        <a href="#tooling" class="nav-link">
+          <span>2. Tooling & MCPs</span>
+          <span class="nav-badge">6</span>
+        </a>
+        <a href="#roadmap" class="nav-link">
+          <span>3. Roadmap Steps</span>
+          <span class="nav-badge" id="nav-step-count">9/9</span>
+        </a>
+        <a href="#sizing" class="nav-link">
+          <span>4. Hardware Sizing</span>
+          <span class="nav-badge">Specs</span>
+        </a>
+        <a href="#calculator" class="nav-link">
+          <span>5. Layer Calculator</span>
+          <span class="nav-badge">Tool</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-section-title">Cluster Status</div>
+      <div style="background: var(--bg-surface-elevated); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--border-hairline); font-size: 12px; font-family: var(--font-mono); color: var(--text-secondary);">
+        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+          <span>RPC Port:</span>
+          <strong style="color:var(--accent-cyan);">50052</strong>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+          <span>Discovery:</span>
+          <strong style="color:var(--accent-emerald);">50053 UDP</strong>
+        </div>
+        <div style="display:flex; justify-content:space-between;">
+          <span>Est. Latency:</span>
+          <strong style="color:var(--accent-emerald);">1–5 ms</strong>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Content Area -->
+    <main class="content-area">
+      <div class="content-wrapper" id="main-content">
+        <!-- Rendered dynamically from MDX -->
+      </div>
+    </main>
+  </div>
+
+  <!-- Raw Embedded MDX Content for 100% offline & file:// compatibility -->
+  <script type="text/markdown" id="embedded-mdx">
+---
+title: "Cross-Platform LAN-Distributed LLM Architecture & Plan"
+description: "Engineering execution roadmap to enable PrivateLM to run on PCs (Windows/Linux/macOS) and mobile devices (Android/iOS) while splitting model layers across devices over a Local Area Network (LAN)."
+author: "Antigravity & David"
+date: "2026-11-08"
+tags: ["LLM", "CrossPlatform", "Flutter", "DistributedInference", "llama.cpp", "RPC", "LAN"]
+---
+
+import { Callout, Steps, Step, Tabs, Tab, Card, Cards } from 'fumadocs-ui/components';
+
+# Cross-Platform LAN-Distributed LLM Client
+
+<Cards>
+  <Card title="Target Devices" description="PC (Windows, macOS, Linux) + Mobile (Android, iOS)" />
+  <Card title="Network Scope" description="Local Area Network (LAN) — 1–5ms ultra-low latency" />
+  <Card title="Core Engine" description="llama.cpp RPC backend (ggml-rpc) on port 50052" />
+  <Card title="Interface" description="Responsive Flutter 3.x with adaptive split-pane desktop workstation" />
+</Cards>
+
+---
+
+## 1. Executive Architecture
+
+PrivateLM 1.0.7-cluster demonstrated phone-to-phone model splitting over Wi-Fi. Our objective is to make **PC a first-class participant** in the cluster—both as a **Master** (loading 14B–70B models and driving inference) and as an **in-app Worker** (accelerating mobile inference with PC GPUs).
+
+```mermaid
+flowchart TD
+    subgraph LAN ["Local Area Network (Home / Office Wi-Fi & Ethernet)"]
+        direction TB
+
+        subgraph MasterOptions ["Master Node Options (Loads Model & Drives Inference)"]
+            PCMaster["🖥️ PC Master (Windows/Mac/Linux)<br>• Recommended: High RAM, fast NVMe, GPU<br>• Runs UI, distributes layers over LAN"]
+            PhoneMaster["📱 Android Phone Master<br>• Runs on-device UI<br>• Distributes layers over LAN"]
+        end
+
+        subgraph WorkerNodes ["Worker Nodes (Run RPC Server on Port 50052)"]
+            PCWorker["🖥️ PC Worker (Windows / Linux / Mac)<br>• Fast GPU/CPU offload<br>• Listens on LAN IP:50052"]
+            PhoneWorker["📱 Mobile Worker (Android / iOS)<br>• Vulkan / Metal GPU offload<br>• Listens on LAN IP:50052"]
+        end
+
+        PCMaster <== "1–5ms LAN RPC (Port 50052)" ==> PhoneWorker
+        PCMaster <== "1–5ms LAN RPC (Port 50052)" ==> PCWorker
+        PhoneMaster <== "1–5ms LAN RPC (Port 50052)" ==> PCWorker
+        PhoneMaster <== "1–5ms LAN RPC (Port 50052)" ==> PhoneWorker
+    end
+```
+
+---
+
+## 2. Tooling, MCPs & Skills Ecosystem
+
+The following MCP servers and developer skills have been configured in `.agents/` to accelerate implementation and UI refinement:
+
+| Tool / Skill | Source | Primary Responsibility |
+| :--- | :--- | :--- |
+| **`playwright` MCP** | `@playwright/mcp` | Automated browser and layout verification, taking snapshots and checking visual fidelity across desktop and mobile aspect ratios. |
+| **`context7` MCP** | `mcp.context7.com` | Resolves up-to-date documentation and API references for Flutter plugins, Dart FFI, and llama.cpp. |
+| **`firecrawl` MCP** | `firecrawl-mcp` | Fast web crawling and scraping for latest llama.cpp RPC commits and Flutter desktop guides. |
+| **`frontend-design` Skill** | `.agents/skills/frontend-design` | Directs anti-slop visual planning, custom palettes, high-craft typography, and responsive grid layouts. |
+| **`taste-skill` Skill** | `.agents/skills/taste-skill` | Enforces visual discipline, bespoke design archetypes (Technical & Command), and WCAG accessibility. |
+
+---
+
+## 3. Step-by-Step Implementation Roadmap
+
+<Steps>
+
+<Step>
+### Step 1: Scaffolding Desktop & Isolating Mobile Dependencies [COMPLETED]
+
+Isolate mobile-only plugins behind abstract Dart interfaces so the app compiles cleanly on Windows, Linux, and macOS without runtime or compile errors:
+
+- **Desktop Scaffolding**: Added official Windows platform runner files under `windows/` (`CMakeLists.txt`, `win32_window`, `flutter_window`, `Runner.rc`, high-DPI manifest).
+- **Path Normalization**: In `download_native.dart` & `image_viewer.dart`, replaced POSIX-only `.split('/')` with `path.basename` (from `package:path`) to eliminate file corruption on Windows backslashes.
+- **Dependency Guarding**:
+  - `mobile_scanner`: Desktop routes to manual IP address entry; mobile retains camera scanning.
+  - `speech_to_text`: Gracefully guarded on desktop (`Platform.isAndroid || Platform.isIOS || Platform.isMacOS`).
+  - `gal`: Created `GallerySaver` (`lib/utils/gallery_saver.dart`) saving directly to user's `Pictures` directory on Windows/Linux via `path_provider` + Dart `File`.
+  - `firebase_*` & `flutter_background_service`: Initialized conditionally only on Android/iOS.
+  - Native Win32 Memory Detection: Implemented `GlobalMemoryStatusEx` via `dart:ffi` in `device_info_native.dart` for sub-millisecond RAM calculation on Windows.
+</Step>
+
+<Step>
+### Step 2: One-Click PC Worker Mode [COMPLETED]
+
+Allow any PC (Windows, macOS, Linux) to lend its CPU/GPU to the cluster with a single click:
+
+- Created `DesktopRpcWorker` (`lib/services/desktop_rpc_worker.dart`) subprocess supervisor.
+- Automatic binary discovery across `bin/`, application directory, and system `PATH`.
+- One-click GitHub release downloader fetching official `llama.cpp` pre-built binaries and unpacking required DLLs.
+- Real-time LAN IPv4 detection filtering out virtual adapters (WSL, Hyper-V, Docker).
+- High-performance background `Isolate` memory bandwidth benchmark (`benchmark()`) reporting GB/s.
+- Integrated into `ClusterService` & `ClusterView` with clipboard copy and live connection state.
+</Step>
+
+<Step>
+### Step 3: PC Master Mode & Dynamic Layer Allocator [COMPLETED]
+
+Allow the PC to act as the primary cluster orchestrator:
+
+- Enabled `ClusterService.canBeMaster = true` and `supportsLocalInference = true` on Windows, Linux, and macOS.
+- Created `DesktopInferenceEngine` (`lib/services/desktop_inference_engine.dart`) managing `llama-server` with `--rpc <worker1:port>,<worker2:port>`.
+- Full OpenAI-compatible SSE streaming (`/v1/chat/completions`) streaming tokens into the desktop chat UI.
+- Multimodal vision support via `--mmproj <path>` and Base64 data URI injection.
+- Slot cancellation via `POST /slots/0?action=cancel` for instant aborts without lingering VRAM locks.
+- Seamlessly hooked into `InferenceEngine` (`lib/services/inference_android.dart`) and `InferenceService`.
+</Step>
+
+<Step>
+### Step 4: Responsive Desktop UI & Workstation Experience [COMPLETED]
+
+Elevate the interface from a stretched phone layout to a polished desktop AI workstation:
+
+- **Collapsible Sidebar Navigation**: Activates in `home_view.dart` when `width >= 800px` with branded header, hover tooltips, and active indicator pills.
+- **Docked Split-Pane Chat View**: In `chat_view.dart` (`width >= 900px`), displays a permanent 280px drawer on the left and active chat pane on the right.
+- **Anti-Slop Centered Reading Comfort**: Constrains message bubbles and view bodies (`maxWidth: 860px` centered) across Chat, Models, Server, Task, and Settings views.
+- **Desktop Interactions**: Mouse right-click conversation deletion, copy-to-clipboard badges, and responsive action sheets.
+</Step>
+
+<Step>
+### Step 5: LAN Cluster Verification, Diagnostics & Stress Testing [COMPLETED]
+
+Validate distributed execution across mixed hardware:
+
+- **Built-In Cluster Diagnostics Suite**: Created `runDiagnostics()` in `ClusterService` and interactive health report in `ClusterView`.
+- **Port 50052 Availability Check**: Automatic self-test ensuring port 50052 can bind without conflict before worker activation.
+- **Hardware RAM Bandwidth Benchmark**: Background `Isolate` measuring memory read speeds (`GB/s`) to inform dynamic layer allocation.
+- **Bi-Directional LAN Distribution**:
+  - **Phone Master ➔ PC Worker**: Android master offloads 50–80% of layers to a Windows PC worker over Wi-Fi on port 50052.
+  - **PC Master ➔ Phone Worker**: PC master offloads layers to phone/tablet workers over LAN via `--rpc`.
+- **Automated Test Suite**: Added `test/desktop_cluster_test.dart` validating serialization, worker status, engine flags, and diagnostic reports.
+</Step>
+
+<Step>
+### Step 6: Zero-Configuration UDP LAN Peer Discovery [COMPLETED]
+
+Instant zero-config peer pairing without manual IP typing:
+
+- **Pure Dart UDP Socket (`LanClusterDiscovery`)**: Binds UDP port 50053 with `RawDatagramSocket`.
+- **Periodic Beacon Broadcast**: Workers broadcast metadata (host, port 50052, RAM MB, memory bandwidth GB/s, OS identity) every 3 seconds to subnet broadcast.
+- **Self-Filtering Listener**: Masters automatically discover available LAN peers and filter self-announcements.
+- **One-Click Pair**: Surface discovered workers in `ClusterView` with live hardware spec badges and one-click `+ Add`.
+- **Automated Test Suite**: Added `test/lan_discovery_test.dart` validating beacon serialization, deserialization, and byte decoding.
+</Step>
+
+<Step>
+### Step 7: Zero-Copy GGUF Linking & Model Folder Scanner [COMPLETED]
+
+Instant zero-copy model loading from local SSDs:
+
+- **Direct Storage References (`externalModelPaths`)**: Mounts 10GB–70GB GGUF models directly from external SSDs in 0 seconds with zero disk duplication.
+- **Folder Scanner**: Recursive directory scanner finds all `.gguf` files across any folder.
+- **Safe Unlinking**: Removing a linked external model purges app references while preserving original files on disk.
+- **Automated Test Suite**: Added `test/desktop_model_storage_test.dart` validating external path resolution, scanner logic, and safe unlinking.
+</Step>
+
+<Step>
+### Step 8: Hardware Performance Tuning Controls [COMPLETED]
+
+Fine-grained resource allocation for mixed hardware:
+
+- **CPU Threads Slider (`-t`)**: Configurable compute threads passed to `llama-server` and `rpc-server`.
+- **GPU Offload Layers Slider (`-ngl`)**: Granular GPU VRAM layer offload controls.
+- **Flash Attention Toggle (`-fa`)**: Memory-efficient attention mechanism for extended context windows.
+- **Persistent Settings**: Integrated directly into `SettingsView`, persisted via Hive, and forwarded to engine daemons.
+</Step>
+
+<Step>
+### Step 9: Live Cluster Telemetry, Topology Inspector & Fault-Tolerant Fallback [COMPLETED]
+
+Production-grade observability and network resilience:
+
+- **Chat AppBar Cluster Telemetry Pill**: Compact status pill displaying active nodes, real-time generation speed (`tokens/sec`), and average LAN ping latency (`ms`).
+- **Interactive Cluster Topology Modal**: Visualizes node-by-node execution pipeline, discrete layer allocations (`Layers 0–23` vs `Layers 24–31`), memory weights, and live connection health.
+- **Sequential Layer Allocator**: Mathematically partitions model layers across master and worker nodes based on allocated memory shares.
+- **TCP Health Keepalive Heartbeat**: Periodic background ping probing worker port `50052` every 3 seconds with consecutive failure detection.
+- **1-Click Worker Drop Fallback**: Warns when a mobile or PC node leaves the LAN and provides instant fallback reloading on local CPU/GPU without losing chat context.
+- **Automated Test Suite**: Added unit tests in `test/lan_discovery_test.dart` verifying `ClusterShare` layer ranges, copyWith immutability, and 32-layer allocation integrity.
+</Step>
+
+</Steps>
+
+---
+
+## 4. Hardware Sizing Guide for LAN Clusters
+
+| Model Size | Quantization | Combined RAM/VRAM Needed | Recommended LAN Cluster Setup |
+| :--- | :---: | :---: | :--- |
+| **8B (Llama 3.1, Gemma 2)** | Q4_K_M | ~5.5 GB | 1 Phone (Master) or 1 PC |
+| **14B (Qwen 2.5 14B)** | Q4_K_M | ~9.5 GB | 1 PC (8 GB VRAM) + 1 Phone (4 GB free) |
+| **27B (Gemma 2 27B)** | IQ2_M / Q3_K_M | ~12–16 GB | 1 PC Master (16 GB RAM) + 1–2 Mobile Workers |
+| **70B (Llama 3.3 70B)** | IQ2_XS / Q4_K_M | ~28–42 GB | 1 High-RAM PC Master + 2–3 Distributed Devices |
+  </script>
+
+  <!-- Marked.js, Mermaid.js, Prism.js -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-dart.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-yaml.min.js"></script>
+
+  <script>
+    // --- Application State ---
+    const STORAGE_KEY_THEME = 'privatelm_docs_theme';
+    const STORAGE_KEY_CHECKED = 'privatelm_docs_milestones_checked';
+    let currentTheme = localStorage.getItem(STORAGE_KEY_THEME) || 'dark';
+    let milestoneChecked = JSON.parse(localStorage.getItem(STORAGE_KEY_CHECKED) || '{}');
+
+    // Default: all 9 completed
+    for (let i = 1; i <= 9; i++) {
+      if (milestoneChecked[i] === undefined) {
+        milestoneChecked[i] = true;
+      }
+    }
+
+    // --- Theme Management ---
+    function applyTheme(theme) {
+      currentTheme = theme;
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem(STORAGE_KEY_THEME, theme);
+
+      const moonIcon = document.getElementById('moon-icon');
+      const sunIcon = document.getElementById('sun-icon');
+      if (theme === 'dark') {
+        moonIcon.style.display = 'block';
+        sunIcon.style.display = 'none';
+      } else {
+        moonIcon.style.display = 'none';
+        sunIcon.style.display = 'block';
+      }
+
+      if (window.mermaid) {
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: theme === 'dark' ? 'dark' : 'default',
+          themeVariables: theme === 'dark' ? {
+            primaryColor: '#161f30',
+            primaryTextColor: '#f8fafc',
+            primaryBorderColor: '#06b6d4',
+            lineColor: '#10b981',
+            secondaryColor: '#111827',
+            tertiaryColor: '#1e293b'
+          } : {}
+        });
+        renderMermaidDiagrams();
+      }
+    }
+
+    document.getElementById('theme-toggle').addEventListener('click', () => {
+      applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
+    });
+
+    // --- MDX Preprocessor & Markdown Renderer ---
+    async function parseAndRenderMDX(rawText) {
+      // 1. Extract Frontmatter
+      let frontmatter = { title: "Architecture Plan", tags: [] };
+      let bodyText = rawText;
+      const fmMatch = rawText.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+      if (fmMatch) {
+        const fmContent = fmMatch[1];
+        bodyText = rawText.substring(fmMatch[0].length);
+        fmContent.split('\n').forEach(line => {
+          const parts = line.split(':');
+          if (parts.length >= 2) {
+            const key = parts[0].trim();
+            const val = parts.slice(1).join(':').trim().replace(/^["']|["']$/g, '');
+            if (key === 'tags') {
+              try {
+                frontmatter.tags = JSON.parse(val);
+              } catch (_) {
+                frontmatter.tags = val.replace(/[\[\]]/g, '').split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
+              }
+            } else {
+              frontmatter[key] = val;
+            }
+          }
+        });
+      }
+
+      // 2. Remove import statements
+      bodyText = bodyText.replace(/^import\s+.*?;\s*$/gm, '');
+
+      // 3. Extract Mermaid code blocks into placeholders BEFORE Markdown parsing
+      const mermaidBlocks = [];
+      bodyText = bodyText.replace(/```mermaid\r?\n([\s\S]*?)\r?\n```/g, (m, code) => {
+        const index = mermaidBlocks.length;
+        mermaidBlocks.push(code.trim());
+        return `\n\n<!--MERMAID_PLACEHOLDER_${index}-->\n\n`;
+      });
+
+      // 4. Process <Cards> and store HTML for post-Marked insertion
+      let cardsHtml = '';
+      bodyText = bodyText.replace(/<Cards>([\s\S]*?)<\/Cards>/g, (m, inner) => {
+        const cards = [];
+        const cardRegex = /<Card\s+title="([^"]*)"\s+description="([^"]*)"\s*\/?>/g;
+        let match;
+        while ((match = cardRegex.exec(inner)) !== null) {
+          cards.push(`
+<div class="feature-card">
+  <div class="feature-card-title">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent-cyan);">
+      <polyline points="20 6 9 17 4 12"></polyline>
+    </svg>
+    ${match[1]}
+  </div>
+  <div class="feature-card-desc">${match[2]}</div>
+</div>`);
+        }
+        cardsHtml = `<div class="cards-grid" id="overview">${cards.join('')}</div>`;
+        return `\n\n<!--CARDS_PLACEHOLDER-->\n\n`;
+      });
+
+      // 5. Process <Steps> and store HTML for post-Marked insertion
+      let stepsHtml = '';
+      bodyText = bodyText.replace(/<Steps>([\s\S]*?)<\/Steps>/g, (m, inner) => {
+        let stepIndex = 0;
+        const stepBlocks = inner.split(/<Step>/).filter(s => s.trim().length > 0);
+        const renderedSteps = stepBlocks.map((block) => {
+          stepIndex++;
+          const cleanBlock = block.replace(/<\/Step>/, '').trim();
+          const lines = cleanBlock.split('\n');
+          const headingLine = lines.find(l => l.startsWith('###')) || `### Step ${stepIndex}`;
+          const title = headingLine.replace(/^###\s*/, '').replace(/\[COMPLETED\]/g, '').trim();
+          const contentLines = lines.filter(l => !l.startsWith('###')).join('\n');
+          const isDone = milestoneChecked[stepIndex] !== false;
+
+          return `
+<div class="step-card ${isDone ? 'completed' : ''}" id="step-${stepIndex}" data-step="${stepIndex}">
+  <div class="step-header">
+    <div class="step-title-area">
+      <div class="step-number">${stepIndex}</div>
+      <div class="step-heading">${title}</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <span class="step-badge">${isDone ? 'COMPLETED' : 'IN PROGRESS'}</span>
+      <input type="checkbox" class="step-card-checkbox" data-step-id="${stepIndex}" ${isDone ? 'checked' : ''} title="Toggle Milestone Status">
+    </div>
+  </div>
+  <div class="step-body">
+    ${marked.parse(contentLines)}
+  </div>
+</div>`;
+        }).join('');
+        stepsHtml = `<div class="steps-timeline" id="roadmap">${renderedSteps}</div>`;
+        return `\n\n<!--STEPS_PLACEHOLDER-->\n\n`;
+      });
+
+      // 6. Section Anchors
+      bodyText = bodyText.replace(/## 1\. Executive Architecture/, '<h2 id="architecture">1. Executive Architecture</h2>');
+      bodyText = bodyText.replace(/## 2\. Tooling, MCPs & Skills Ecosystem/, '<h2 id="tooling">2. Tooling, MCPs & Skills Ecosystem</h2>');
+      bodyText = bodyText.replace(/## 3\. Step-by-Step Implementation Roadmap/, '<h2 id="roadmap">3. Step-by-Step Implementation Roadmap</h2>');
+      bodyText = bodyText.replace(/## 4\. Hardware Sizing Guide for LAN Clusters/, '<h2 id="sizing">4. Hardware Sizing Guide for LAN Clusters</h2>');
+
+      // 7. Render Markdown via Marked
+      marked.setOptions({
+        gfm: true,
+        breaks: false,
+        headerIds: true,
+        mangle: false,
+        highlight: function(code, lang) {
+          if (Prism.languages[lang]) {
+            return Prism.highlight(code, Prism.languages[lang], lang);
+          }
+          return code;
+        }
+      });
+
+      let parsedHtml = marked.parse(bodyText);
+
+      // 8. Re-insert Placeholders (Cards, Steps, Mermaid)
+      parsedHtml = parsedHtml.replace('<p><!--CARDS_PLACEHOLDER--></p>', cardsHtml);
+      parsedHtml = parsedHtml.replace('<!--CARDS_PLACEHOLDER-->', cardsHtml);
+      parsedHtml = parsedHtml.replace('<p><!--STEPS_PLACEHOLDER--></p>', stepsHtml);
+      parsedHtml = parsedHtml.replace('<!--STEPS_PLACEHOLDER-->', stepsHtml);
+
+      mermaidBlocks.forEach((code, index) => {
+        const containerHtml = `
+          <div class="mermaid-container" id="architecture">
+            <div class="mermaid" id="mermaid-${index}" data-raw="${encodeURIComponent(code)}"></div>
+          </div>
+        `;
+        parsedHtml = parsedHtml.replace(`<p><!--MERMAID_PLACEHOLDER_${index}--></p>`, containerHtml);
+        parsedHtml = parsedHtml.replace(`<!--MERMAID_PLACEHOLDER_${index}-->`, containerHtml);
+      });
+
+      // 9. Assemble Hero Banner & Cluster Calculator
+      const heroBanner = `
+        <div class="hero-banner" id="overview">
+          <div class="hero-tags">
+            ${(frontmatter.tags || []).map(t => `<span class="tag-pill">${t}</span>`).join('')}
+          </div>
+          <h1 class="hero-title">${frontmatter.title}</h1>
+          <p class="hero-description">${frontmatter.description}</p>
+          <div class="hero-meta">
+            <div class="hero-meta-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+              Author: <strong>${frontmatter.author || 'Antigravity & David'}</strong>
+            </div>
+            <div class="hero-meta-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+              Date: <strong>${frontmatter.date || '2026-11-08'}</strong>
+            </div>
+            <div class="hero-meta-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 14 14"></polyline>
+              </svg>
+              Status: <strong style="color:var(--accent-emerald);">All 9 Milestones Completed</strong>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const calculatorComponent = `
+        <div class="calculator-widget" id="calculator">
+          <div class="calc-header">
+            <div class="calc-title">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent-cyan);">
+                <rect x="4" y="2" width="16" height="20" rx="2"></rect>
+                <line x1="8" y1="6" x2="16" y2="6"></line>
+                <line x1="16" y1="14" x2="16" y2="14.01"></line>
+                <line x1="12" y1="14" x2="12" y2="14.01"></line>
+                <line x1="8" y1="14" x2="8" y2="14.01"></line>
+                <line x1="16" y1="18" x2="16" y2="18.01"></line>
+                <line x1="12" y1="18" x2="12" y2="18.01"></line>
+                <line x1="8" y1="18" x2="8" y2="18.01"></line>
+              </svg>
+              Interactive Cluster RAM & Layer Allocator
+            </div>
+            <span class="tag-pill" style="color:var(--accent-cyan); border-color:var(--border-highlight);">Port 50052 RPC</span>
+          </div>
+
+          <div class="calc-grid">
+            <div class="calc-group">
+              <label class="calc-label">
+                <span>Model Architecture</span>
+                <span id="model-ram-needed" style="color:var(--accent-cyan); font-family:var(--font-mono);">~9.5 GB</span>
+              </label>
+              <select id="calc-model-preset" class="calc-select">
+                <option value="8b" data-layers="32" data-ram="5.5">8B (Llama 3.1 / Gemma 2) · 32 Layers · 5.5 GB</option>
+                <option value="14b" data-layers="48" data-ram="9.5" selected>14B (Qwen 2.5 14B) · 48 Layers · 9.5 GB</option>
+                <option value="27b" data-layers="46" data-ram="16.0">27B (Gemma 2 27B) · 46 Layers · 16.0 GB</option>
+                <option value="70b" data-layers="80" data-ram="42.0">70B (Llama 3.3 70B) · 80 Layers · 42.0 GB</option>
+              </select>
+            </div>
+
+            <div class="calc-group">
+              <label class="calc-label">
+                <span>Master Available RAM / VRAM</span>
+                <span id="master-ram-val" style="font-family:var(--font-mono);">8.0 GB</span>
+              </label>
+              <input type="range" id="master-ram-slider" class="calc-range" min="2" max="64" step="1" value="8">
+            </div>
+
+            <div class="calc-group">
+              <label class="calc-label">
+                <span>Worker 1 Available RAM</span>
+                <span id="worker1-ram-val" style="font-family:var(--font-mono);">8.0 GB</span>
+              </label>
+              <input type="range" id="worker1-ram-slider" class="calc-range" min="0" max="64" step="1" value="8">
+            </div>
+
+            <div class="calc-group">
+              <label class="calc-label">
+                <span>Worker 2 Available RAM (Optional)</span>
+                <span id="worker2-ram-val" style="font-family:var(--font-mono);">0.0 GB</span>
+              </label>
+              <input type="range" id="worker2-ram-slider" class="calc-range" min="0" max="64" step="1" value="0">
+            </div>
+          </div>
+
+          <div class="calc-toggle">
+            <input type="checkbox" id="calc-preserve-embeddings" checked>
+            <label for="calc-preserve-embeddings">Preserve embedding & vocab projection layers on Master (prevents sending 150MB+ vocab matrices over LAN)</label>
+          </div>
+
+          <div class="calc-results" style="margin-top:20px;">
+            <div class="layer-bar-container">
+              <div class="layer-bar-label">
+                <span>Calculated Layer Distribution</span>
+                <span id="layer-distribution-text">Master: 24 · Worker 1: 24</span>
+              </div>
+              <div class="layer-bar" id="layer-bar">
+                <div class="layer-slice master" id="slice-master" style="width: 50%;">Master 50%</div>
+                <div class="layer-slice worker1" id="slice-worker1" style="width: 50%;">Worker 1 50%</div>
+                <div class="layer-slice worker2" id="slice-worker2" style="width: 0%; display:none;">Worker 2 0%</div>
+              </div>
+            </div>
+
+            <div class="calc-metrics">
+              <div class="metric-pill">
+                <div class="metric-title">Master Allocation</div>
+                <div class="metric-val" id="metric-master-layers">Layers 0–23 (24)</div>
+                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;" id="metric-master-mem">~4.8 GB RAM</div>
+              </div>
+              <div class="metric-pill">
+                <div class="metric-title">Worker 1 Allocation</div>
+                <div class="metric-val" id="metric-worker1-layers">Layers 24–47 (24)</div>
+                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;" id="metric-worker1-mem">~4.8 GB RAM</div>
+              </div>
+              <div class="metric-pill">
+                <div class="metric-title">Worker 2 Allocation</div>
+                <div class="metric-val" id="metric-worker2-layers">None (0)</div>
+                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;" id="metric-worker2-mem">0.0 GB RAM</div>
+              </div>
+              <div class="metric-pill">
+                <div class="metric-title">LAN Ping & Speed</div>
+                <div class="metric-val" style="color:var(--accent-emerald);">1.2 ms · 28 t/s</div>
+                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Gigabit LAN / Wi-Fi 6</div>
+              </div>
+            </div>
+
+            <div style="margin-top:16px; display:flex; align-items:center; justify-content:space-between;">
+              <div id="calc-status-badge" class="calc-status-badge status-feasible">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Cluster Ready: Combined RAM (16.0 GB) exceeds required 9.5 GB</span>
+              </div>
+              <span style="font-size:11px; font-family:var(--font-mono); color:var(--text-muted);">Dynamic Sequential Allocator</span>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Render into main content container
+      const mainContainer = document.getElementById('main-content');
+      mainContainer.innerHTML = `
+        ${heroBanner}
+        ${parsedHtml}
+        ${calculatorComponent}
+      `;
+
+      // Render KaTeX Math if present
+      if (window.renderMathInElement) {
+        renderMathInElement(mainContainer, {
+          delimiters: [
+            {left: '$$', right: '$$', display: true},
+            {left: '$', right: '$', display: false}
+          ],
+          throwOnError: false
+        });
+      }
+
+      // Render Mermaid & Prism
+      await renderMermaidDiagrams();
+      if (window.Prism) Prism.highlightAll();
+
+      // Hook up interactive widgets
+      initMilestoneCheckboxes();
+      initCalculator();
+      initSearch();
+      initNavScrollspy();
+    }
+
+    async function renderMermaidDiagrams() {
+      if (!window.mermaid) return;
+      const elements = document.querySelectorAll('.mermaid');
+      for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const rawCode = decodeURIComponent(el.getAttribute('data-raw') || '');
+        if (!rawCode) continue;
+        try {
+          const id = `mermaid-rendered-${i}-${Date.now()}`;
+          const { svg } = await mermaid.render(id, rawCode);
+          el.innerHTML = svg;
+        } catch (err) {
+          console.warn('Mermaid rendering notice:', err);
+        }
+      }
+    }
+
+    // --- Interactive Checkbox & Milestone Handling ---
+    function initMilestoneCheckboxes() {
+      const checkboxes = document.querySelectorAll('.step-card-checkbox');
+      checkboxes.forEach(cb => {
+        cb.addEventListener('change', (e) => {
+          const stepId = e.target.getAttribute('data-step-id');
+          const isChecked = e.target.checked;
+          milestoneChecked[stepId] = isChecked;
+          localStorage.setItem(STORAGE_KEY_CHECKED, JSON.stringify(milestoneChecked));
+
+          const card = document.getElementById(`step-${stepId}`);
+          if (card) {
+            const badge = card.querySelector('.step-badge');
+            if (isChecked) {
+              card.classList.add('completed');
+              if (badge) badge.innerText = 'COMPLETED';
+            } else {
+              card.classList.remove('completed');
+              if (badge) badge.innerText = 'IN PROGRESS';
+            }
+          }
+          updateMilestoneCounters();
+        });
+      });
+      updateMilestoneCounters();
+    }
+
+    function updateMilestoneCounters() {
+      const total = 9;
+      const completed = Object.values(milestoneChecked).filter(Boolean).length;
+      const progressText = `${completed}/${total} Milestones Completed (${Math.round((completed / total) * 100)}%)`;
+      const topProgress = document.getElementById('top-progress-text');
+      const navCount = document.getElementById('nav-step-count');
+      if (topProgress) topProgress.innerText = progressText;
+      if (navCount) navCount.innerText = `${completed}/${total}`;
+
+      const doneBtn = document.querySelector('.filter-btn[data-filter="completed"]');
+      const pendingBtn = document.querySelector('.filter-btn[data-filter="pending"]');
+      if (doneBtn) doneBtn.innerText = `Done (${completed})`;
+      if (pendingBtn) pendingBtn.innerText = `Pending (${total - completed})`;
+    }
+
+    // --- Filter Buttons ---
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const filter = btn.getAttribute('data-filter');
+        const cards = document.querySelectorAll('.step-card');
+        cards.forEach(card => {
+          const isDone = card.classList.contains('completed');
+          if (filter === 'all') {
+            card.style.display = 'block';
+          } else if (filter === 'completed') {
+            card.style.display = isDone ? 'block' : 'none';
+          } else if (filter === 'pending') {
+            card.style.display = !isDone ? 'block' : 'none';
+          }
+        });
+      });
+    });
+
+    // --- Search Filtering ---
+    function initSearch() {
+      const input = document.getElementById('roadmap-search');
+      if (!input) return;
+      input.addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase().trim();
+        const stepCards = document.querySelectorAll('.step-card');
+        stepCards.forEach(card => {
+          const text = card.innerText.toLowerCase();
+          card.style.display = text.includes(query) ? 'block' : 'none';
+        });
+      });
+    }
+
+    // --- Layer Calculator Logic ---
+    function initCalculator() {
+      const modelSelect = document.getElementById('calc-model-preset');
+      const masterSlider = document.getElementById('master-ram-slider');
+      const worker1Slider = document.getElementById('worker1-ram-slider');
+      const worker2Slider = document.getElementById('worker2-ram-slider');
+      const preserveCheck = document.getElementById('calc-preserve-embeddings');
+
+      if (!modelSelect || !masterSlider || !worker1Slider || !worker2Slider || !preserveCheck) {
+        return;
+      }
+
+      function updateCalculator() {
+        const opt = modelSelect.selectedOptions[0];
+        const totalLayers = parseInt(opt.getAttribute('data-layers'));
+        const modelRamNeeded = parseFloat(opt.getAttribute('data-ram'));
+        const masterRam = parseFloat(masterSlider.value);
+        const worker1Ram = parseFloat(worker1Slider.value);
+        const worker2Ram = parseFloat(worker2Slider.value);
+        const preserveMaster = preserveCheck.checked;
+
+        document.getElementById('master-ram-val').innerText = `${masterRam.toFixed(1)} GB`;
+        document.getElementById('worker1-ram-val').innerText = `${worker1Ram.toFixed(1)} GB`;
+        document.getElementById('worker2-ram-val').innerText = `${worker2Ram.toFixed(1)} GB`;
+        document.getElementById('model-ram-needed').innerText = `~${modelRamNeeded.toFixed(1)} GB`;
+
+        const totalAvailable = masterRam + worker1Ram + worker2Ram;
+        const isFeasible = totalAvailable >= modelRamNeeded;
+
+        // Allocation weights
+        let masterWeight = masterRam;
+        let w1Weight = worker1Ram;
+        let w2Weight = worker2Ram;
+
+        // Reserve embedding & vocab projection weight on master if checked
+        if (preserveMaster) {
+          masterWeight *= 1.25;
+        }
+
+        const totalWeight = masterWeight + w1Weight + w2Weight || 1;
+        const masterFrac = masterWeight / totalWeight;
+        const w1Frac = w1Weight / totalWeight;
+        const w2Frac = w2Weight / totalWeight;
+
+        let masterLayers = Math.max(1, Math.round(totalLayers * masterFrac));
+        let w1Layers = Math.round(totalLayers * w1Frac);
+        let w2Layers = totalLayers - masterLayers - w1Layers;
+        if (w2Layers < 0) {
+          w1Layers += w2Layers;
+          w2Layers = 0;
+        }
+
+        const mPct = (masterLayers / totalLayers) * 100;
+        const w1Pct = (w1Layers / totalLayers) * 100;
+        const w2Pct = (w2Layers / totalLayers) * 100;
+
+        const sliceM = document.getElementById('slice-master');
+        const sliceW1 = document.getElementById('slice-worker1');
+        const sliceW2 = document.getElementById('slice-worker2');
+
+        if (sliceM) {
+          sliceM.style.width = `${mPct}%`;
+          sliceM.innerText = masterLayers > 0 ? `Master ${Math.round(mPct)}%` : '';
+        }
+        if (sliceW1) {
+          sliceW1.style.width = `${w1Pct}%`;
+          sliceW1.innerText = w1Layers > 0 ? `Worker 1 ${Math.round(w1Pct)}%` : '';
+        }
+        if (sliceW2) {
+          if (w2Layers > 0) {
+            sliceW2.style.display = 'flex';
+            sliceW2.style.width = `${w2Pct}%`;
+            sliceW2.innerText = `Worker 2 ${Math.round(w2Pct)}%`;
+          } else {
+            sliceW2.style.display = 'none';
+          }
+        }
+
+        const mStart = 0;
+        const mEnd = masterLayers - 1;
+        const w1Start = masterLayers;
+        const w1End = masterLayers + w1Layers - 1;
+        const w2Start = masterLayers + w1Layers;
+        const w2End = totalLayers - 1;
+
+        document.getElementById('metric-master-layers').innerText = `Layers ${mStart}–${mEnd} (${masterLayers})`;
+        document.getElementById('metric-master-mem').innerText = `~${((modelRamNeeded * (masterLayers / totalLayers))).toFixed(1)} GB RAM`;
+
+        document.getElementById('metric-worker1-layers').innerText = w1Layers > 0 ? `Layers ${w1Start}–${w1End} (${w1Layers})` : 'None (0)';
+        document.getElementById('metric-worker1-mem').innerText = `~${((modelRamNeeded * (w1Layers / totalLayers))).toFixed(1)} GB RAM`;
+
+        document.getElementById('metric-worker2-layers').innerText = w2Layers > 0 ? `Layers ${w2Start}–${w2End} (${w2Layers})` : 'None (0)';
+        document.getElementById('metric-worker2-mem').innerText = `~${((modelRamNeeded * (w2Layers / totalLayers))).toFixed(1)} GB RAM`;
+
+        document.getElementById('layer-distribution-text').innerText = `Master: ${masterLayers} · Worker 1: ${w1Layers}${w2Layers > 0 ? ` · Worker 2: ${w2Layers}` : ''}`;
+
+        const badge = document.getElementById('calc-status-badge');
+        if (badge) {
+          if (isFeasible) {
+            badge.className = 'calc-status-badge status-feasible';
+            badge.innerHTML = `
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>Cluster Ready: Combined RAM (${totalAvailable.toFixed(1)} GB) exceeds required ${modelRamNeeded.toFixed(1)} GB</span>
+            `;
+          } else {
+            badge.className = 'calc-status-badge status-infeasible';
+            badge.innerHTML = `
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+              <span>Insufficient Memory: Need ${modelRamNeeded.toFixed(1)} GB, but available cluster RAM is only ${totalAvailable.toFixed(1)} GB</span>
+            `;
+          }
+        }
+      }
+
+      modelSelect.addEventListener('change', updateCalculator);
+      masterSlider.addEventListener('input', updateCalculator);
+      worker1Slider.addEventListener('input', updateCalculator);
+      worker2Slider.addEventListener('input', updateCalculator);
+      preserveCheck.addEventListener('change', updateCalculator);
+
+      updateCalculator();
+    }
+
+    // --- Sidebar Scrollspy ---
+    function initNavScrollspy() {
+      const navLinks = document.querySelectorAll('#sidebar-nav .nav-link');
+      const sections = ['overview', 'architecture', 'tooling', 'roadmap', 'sizing', 'calculator'];
+
+      window.addEventListener('scroll', () => {
+        let current = '';
+        sections.forEach(secId => {
+          const el = document.getElementById(secId);
+          if (el) {
+            const top = el.getBoundingClientRect().top;
+            if (top <= 120) {
+              current = secId;
+            }
+          }
+        });
+        if (current) {
+          navLinks.forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === `#${current}`) {
+              link.classList.add('active');
+            }
+          });
+        }
+      }, { passive: true });
+    }
+
+    // --- Entry Point ---
+    window.addEventListener('DOMContentLoaded', async () => {
+      applyTheme(currentTheme);
+
+      let rawMDX = '';
+      try {
+        const res = await fetch('../PLAN.mdx');
+        if (res.ok) {
+          rawMDX = await res.text();
+        }
+      } catch (_) {}
+
+      if (!rawMDX || rawMDX.trim().length === 0) {
+        rawMDX = document.getElementById('embedded-mdx').textContent.trim();
+      }
+
+      await parseAndRenderMDX(rawMDX);
+    });
+  </script>
+</body>
+</html>
