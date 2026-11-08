@@ -261,7 +261,10 @@ class ClusterService extends GetxService {
   /// share), so keep it on while this device works for others: as a worker,
   /// or serving the model over the network.
   bool? _screenKeptOn;
+  bool get isScreenKeptOn => _screenKeptOn ?? false;
+
   void _updateKeepScreenOn() {
+    if (isDesktop) return;
     final s = worker.value;
     final on = s.running || s.starting || serving.value;
     if (on == _screenKeptOn) return;

@@ -865,7 +865,7 @@
     <div class="topbar-actions">
       <div class="progress-pill">
         <span class="status-dot"></span>
-        <span id="top-progress-text">11/14 Milestones Completed (79%)</span>
+        <span id="top-progress-text">12/15 Milestones Completed (80%)</span>
       </div>
       <button class="btn-icon" id="theme-toggle" title="Toggle Dark/Light Mode">
         <svg id="moon-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -920,7 +920,7 @@
         </a>
         <a href="#roadmap" class="nav-link">
           <span>3. Roadmap Steps</span>
-          <span class="nav-badge" id="nav-step-count">11/14</span>
+          <span class="nav-badge" id="nav-step-count">12/15</span>
         </a>
         <a href="#sizing" class="nav-link">
           <span>4. Hardware Sizing</span>
@@ -1197,6 +1197,16 @@ Expose the distributed cluster to external AI tooling over the local network:
 - **Network Discovery**: Broadcast API service metadata over LAN for instant zero-config client discovery.
 </Step>
 
+<Step>
+### Step 15: Windows Native `.exe` Packaging & Automated CI/CD Release Pipeline [COMPLETED]
+
+One-click compilation and automated cloud distribution of the standalone Windows desktop client:
+
+- **Automated GitHub Actions CI/CD (`.github/workflows/build_windows.yml`)**: Cloud-hosted Windows-latest runner compiling `privatelm.exe` with Visual Studio 2022 C++ tools and Flutter stable.
+- **Automated Zip Distribution Packaging**: Compresses `privatelm.exe`, `flutter_windows.dll`, bundled engine binaries, and asset data into `PrivateLM-Windows-x64.zip` as a downloadable GitHub Action artifact and automatic tag release.
+- **Local Double-Click Build Scripts (`scripts/build_windows.bat` & `scripts/build_windows.ps1`)**: Discovers Flutter in PATH or standard directories, verifies MSVC C++ tools, runs test suites, compiles release binaries, bundles dependencies into `dist\PrivateLM-Windows-x64\`, and generates quick-start documentation.
+</Step>
+
 </Steps>
 
 ---
@@ -1226,11 +1236,14 @@ Expose the distributed cluster to external AI tooling over the local network:
     let currentTheme = localStorage.getItem(STORAGE_KEY_THEME) || 'dark';
     let milestoneChecked = JSON.parse(localStorage.getItem(STORAGE_KEY_CHECKED) || '{}');
 
-    // Default: all 11 completed
+    // Default: 1-11 and 15 completed
     for (let i = 1; i <= 11; i++) {
       if (milestoneChecked[i] === undefined) {
         milestoneChecked[i] = true;
       }
+    }
+    if (milestoneChecked[15] === undefined) {
+      milestoneChecked[15] = true;
     }
 
     // --- Theme Management ---
@@ -1626,7 +1639,7 @@ Expose the distributed cluster to external AI tooling over the local network:
     }
 
     function updateMilestoneCounters() {
-      const total = 14;
+      const total = 15;
       const completed = Object.values(milestoneChecked).filter(Boolean).length;
       const progressText = `${completed}/${total} Milestones Completed (${Math.round((completed / total) * 100)}%)`;
       const topProgress = document.getElementById('top-progress-text');

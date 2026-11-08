@@ -1,0 +1,68 @@
+name: Build Windows Native Executable
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Build Native Windows Executable (.exe)
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Enable Windows Desktop Support
+        run: flutter config --enable-windows-desktop
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run cluster & engine tests
+        run: flutter test test/desktop_cluster_test.dart test/lan_discovery_test.dart
+
+      - name: Build Windows Release Executable
+        run: flutter build windows --release
+
+      - name: Package Windows Distribution Bundle
+        shell: pwsh
+        run: |
+          $releaseDir = "build/windows/x64/runner/Release"
+          $distDir = "dist/PrivateLM-Windows-x64"
+          New-Item -ItemType Directory -Force -Path $distDir | Out-Null
+          
+          # Copy release binary and flutter engine libraries
+          Copy-Item -Path "$releaseDir/*" -Destination $distDir -Recurse -Force
+          
+          # Create zip archive for one-click distribution
+          Compress-Archive -Path "$distDir/*" -DestinationPath "PrivateLM-Windows-x64.zip" -Force
+          Write-Host "Created PrivateLM-Windows-x64.zip successfully."
+
+      - name: Upload Windows Executable Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrivateLM-Windows-x64
+          path: PrivateLM-Windows-x64.zip
+          retention-days: 30
+
+      - name: Publish GitHub Release (On Version Tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: PrivateLM-Windows-x64.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

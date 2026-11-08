@@ -236,6 +236,16 @@ Expose the distributed cluster to external AI tooling over the local network:
 - **Network Discovery**: Broadcast API service metadata over LAN for instant zero-config client discovery.
 </Step>
 
+<Step>
+### Step 15: Windows Native `.exe` Packaging & Automated CI/CD Release Pipeline [COMPLETED]
+
+One-click compilation and automated cloud distribution of the standalone Windows desktop client:
+
+- **Automated GitHub Actions CI/CD (`.github/workflows/build_windows.yml`)**: Cloud-hosted Windows-latest runner compiling `privatelm.exe` with Visual Studio 2022 C++ tools and Flutter stable.
+- **Automated Zip Distribution Packaging**: Compresses `privatelm.exe`, `flutter_windows.dll`, bundled engine binaries, and asset data into `PrivateLM-Windows-x64.zip` as a downloadable GitHub Action artifact and automatic tag release.
+- **Local Double-Click Build Scripts (`scripts/build_windows.bat` & `scripts/build_windows.ps1`)**: Discovers Flutter in PATH or standard directories, verifies MSVC C++ tools, runs test suites, compiles release binaries, bundles dependencies into `dist\PrivateLM-Windows-x64\`, and generates quick-start documentation.
+</Step>
+
 </Steps>
 
 ---

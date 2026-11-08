@@ -261,4 +261,30 @@ void main() {
       expect(detection.recommendedFlavor, EngineBackendFlavor.vulkan);
     });
   });
+
+  group('Windows Native Packaging & Build Infrastructure Tests', () {
+    test('Build scripts and CI/CD workflow files exist', () {
+      final hasCi = File('ci/build_windows.yml').existsSync() ||
+          File('.github/workflows/build_windows.yml').existsSync();
+      expect(hasCi, isTrue);
+      expect(File('scripts/build_windows.ps1').existsSync(), isTrue);
+      expect(File('scripts/build_windows.bat').existsSync(), isTrue);
+    });
+
+    test('CMakeLists defines valid binary target name', () {
+      final cmake = File('windows/CMakeLists.txt').readAsStringSync();
+      expect(cmake, contains('set(BINARY_NAME "privatelm")'));
+      expect(cmake, contains('project(privatelm LANGUAGES CXX)'));
+    });
+
+    test('GitHub Actions workflow includes release compilation and artifact packaging', () {
+      final path = File('ci/build_windows.yml').existsSync()
+          ? 'ci/build_windows.yml'
+          : '.github/workflows/build_windows.yml';
+      final workflow = File(path).readAsStringSync();
+      expect(workflow, contains('flutter build windows --release'));
+      expect(workflow, contains('PrivateLM-Windows-x64.zip'));
+      expect(workflow, contains('actions/upload-artifact@v4'));
+    });
+  });
 }

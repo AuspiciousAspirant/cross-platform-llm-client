@@ -13,6 +13,7 @@ import '../core/ui.dart';
 import '../services/cluster_service.dart';
 import '../services/desktop_rpc_worker.dart';
 import '../widgets/unified_engine_setup_card.dart';
+import 'ambient_worker_view.dart';
 
 /// Phone cluster: pick Master (runs the model) or Worker (lends this phone),
 /// and pair them by scanning the worker's QR code.
@@ -186,6 +187,14 @@ class _ClusterViewState extends State<ClusterView> {
           Expanded(child: _Stat(label: 'Free at start', value: _gb(s.ramMb))),
           Expanded(child: _Stat(label: 'Memory speed', value: '${s.bandwidth.toStringAsFixed(1)} GB/s')),
         ]),
+        const SizedBox(height: 16),
+        PillButton(
+          label: 'Ambient Low-Power Mode',
+          icon: Icons.nightlight_round,
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AmbientWorkerView()),
+          ),
+        ),
       ]);
     } else if (!s.running || qr == null) {
       body = _centered(context, [
@@ -276,6 +285,14 @@ class _ClusterViewState extends State<ClusterView> {
             ),
           ),
         ]),
+        const SizedBox(height: 16),
+        PillButton(
+          label: 'Ambient Mode',
+          icon: Icons.nightlight_round,
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AmbientWorkerView()),
+          ),
+        ),
       ]);
     }
 
