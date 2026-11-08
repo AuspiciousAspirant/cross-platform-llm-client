@@ -90,6 +90,14 @@ class DesktopEngineManager {
   /// Resolves the preferred binary directory (<appSupport>/bin or <workspace>/bin).
   static Future<String> getPreferredBinDir() async {
     try {
+      final exeDir = p.dirname(Platform.resolvedExecutable);
+      final distBin = Directory(p.join(exeDir, 'bin'));
+      if (await distBin.exists()) {
+        return distBin.path;
+      }
+    } catch (_) {}
+
+    try {
       final appSupport = await getApplicationSupportDirectory();
       final appBin = Directory(p.join(appSupport.path, 'bin'));
       if (!await appBin.exists()) {
@@ -102,6 +110,29 @@ class DesktopEngineManager {
         localBin.createSync(recursive: true);
       }
       return localBin.path;
+    }
+  }
+
+  /// Verifies whether a binary has its required companion DLLs on Windows.
+  static bool isCompleteBinary(String binaryPath) {
+    if (!Platform.isWindows) return true;
+    try {
+      final f = File(binaryPath);
+      final size = f.lengthSync();
+      if (size < 500 * 1024) {
+        final dir = p.dirname(binaryPath);
+        final base = p.basename(binaryPath).toLowerCase();
+        if (base.contains('llama-server')) {
+          final implDll = File(p.join(dir, 'llama-server-impl.dll'));
+          final llamaDll = File(p.join(dir, 'llama.dll'));
+          if (!implDll.existsSync() && !llamaDll.existsSync()) {
+            return false;
+          }
+        }
+      }
+      return true;
+    } catch (_) {
+      return true;
     }
   }
 
@@ -294,11 +325,11 @@ class DesktopEngineManager {
     for (final dir in candidateDirs) {
       if (foundMaster == null) {
         final m = File(p.join(dir, masterBin));
-        if (m.existsSync()) foundMaster = m.path;
+        if (m.existsSync() && isCompleteBinary(m.path)) foundMaster = m.path;
       }
       if (foundWorker == null) {
         final w = File(p.join(dir, workerBin));
-        if (w.existsSync()) foundWorker = w.path;
+        if (w.existsSync() && isCompleteBinary(w.path)) foundWorker = w.path;
       }
       if (foundMaster != null && foundWorker != null) break;
     }

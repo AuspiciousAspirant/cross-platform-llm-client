@@ -89,7 +89,7 @@ class DesktopInferenceEngine {
       '-t', '$threads',
       '--port', '$port',
       '--host', host,
-      if (flashAttention) '-fa',
+      if (flashAttention) ...['-fa', 'on'],
       if (kvCacheTypeK != null && kvCacheTypeK.isNotEmpty && kvCacheTypeK != 'f16')
         ...['-ctk', kvCacheTypeK],
       if (kvCacheTypeV != null && kvCacheTypeV.isNotEmpty && kvCacheTypeV != 'f16')

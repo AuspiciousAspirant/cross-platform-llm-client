@@ -126,6 +126,8 @@ void main() {
       expect(args, contains('-t'));
       expect(args, contains('8'));
       expect(args, contains('-fa'));
+      final faIndex = args.indexOf('-fa');
+      expect(args[faIndex + 1], 'on');
       expect(args.contains('-ctk'), isFalse);
       expect(args.contains('-ctv'), isFalse);
     });
