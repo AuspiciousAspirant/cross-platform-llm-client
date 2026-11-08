@@ -50,6 +50,10 @@ class SettingsController extends GetxController {
   final maxTokens = 512.obs;
   final contextSize = 2048.obs;
   final liteRtPerformanceMode = AppConstants.defaultLiteRtPerformanceMode.obs;
+  final cpuThreads = AppConstants.defaultCpuThreads.obs;
+  final gpuOffloadLayers = AppConstants.defaultGpuOffloadLayers.obs;
+  final enableFlashAttention = AppConstants.defaultEnableFlashAttention.obs;
+  final customModelsDirectory = ''.obs;
 
   final imageSteps = 1.obs;
   final imageGenForceCpu = AppConstants.defaultImageGenForceCpu.obs;
@@ -206,6 +210,20 @@ class SettingsController extends GetxController {
           defaultValue: AppConstants.defaultLiteRtPerformanceMode,
         ) ??
         AppConstants.defaultLiteRtPerformanceMode;
+    cpuThreads.value = _hive.getSetting(AppConstants.keyCpuThreads,
+            defaultValue: AppConstants.defaultCpuThreads) ??
+        AppConstants.defaultCpuThreads;
+    gpuOffloadLayers.value = _hive.getSetting(AppConstants.keyGpuOffloadLayers,
+            defaultValue: AppConstants.defaultGpuOffloadLayers) ??
+        AppConstants.defaultGpuOffloadLayers;
+    enableFlashAttention.value = _hive.getSetting(
+            AppConstants.keyEnableFlashAttention,
+            defaultValue: AppConstants.defaultEnableFlashAttention) ??
+        AppConstants.defaultEnableFlashAttention;
+    customModelsDirectory.value = _hive.getSetting(
+            AppConstants.keyCustomModelsDirectory,
+            defaultValue: '') ??
+        '';
     imageSteps.value = _hive.getSetting(AppConstants.keyImageSteps,
             defaultValue: AppConstants.defaultImageSteps) ??
         AppConstants.defaultImageSteps;
@@ -700,6 +718,26 @@ class SettingsController extends GetxController {
   Future<void> setContextSize(int value) async {
     contextSize.value = value;
     await _hive.setSetting(AppConstants.keyContextSize, value);
+  }
+
+  Future<void> setCpuThreads(int value) async {
+    cpuThreads.value = value;
+    await _hive.setSetting(AppConstants.keyCpuThreads, value);
+  }
+
+  Future<void> setGpuOffloadLayers(int value) async {
+    gpuOffloadLayers.value = value;
+    await _hive.setSetting(AppConstants.keyGpuOffloadLayers, value);
+  }
+
+  Future<void> setEnableFlashAttention(bool value) async {
+    enableFlashAttention.value = value;
+    await _hive.setSetting(AppConstants.keyEnableFlashAttention, value);
+  }
+
+  Future<void> setCustomModelsDirectory(String value) async {
+    customModelsDirectory.value = value;
+    await _hive.setSetting(AppConstants.keyCustomModelsDirectory, value);
   }
 
   Future<void> setLiteRtPerformanceMode(String mode) async {

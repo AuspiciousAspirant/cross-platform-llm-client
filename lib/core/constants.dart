@@ -75,12 +75,20 @@ class AppConstants {
   static const String keyFontScale = 'font_scale';
   static const String keyBatchModeWarningAccepted =
       'batch_mode_warning_accepted';
+  static const String keyCpuThreads = 'cpu_threads';
+  static const String keyGpuOffloadLayers = 'gpu_offload_layers';
+  static const String keyEnableFlashAttention = 'enable_flash_attention';
+  static const String keyCustomModelsDirectory = 'custom_models_directory';
+  static const String keyExternalModelPaths = 'external_model_paths';
 
   // Default Model Config
   static const double defaultTemperature = 0.7;
   static const int defaultMaxTokens = 1024;
   static const int defaultContextSize = 2048;
   static const String defaultLiteRtPerformanceMode = 'auto_fast';
+  static const int defaultCpuThreads = 0; // 0 = Auto detected based on CPU cores
+  static const int defaultGpuOffloadLayers = 99; // 99 = Full GPU offload
+  static const bool defaultEnableFlashAttention = true;
   static const int defaultImageSteps = 1;
   static const bool defaultImageGenForceCpu = true;
   static const int defaultImageGenGpuGuardMb = 1843; // 1.8 GB

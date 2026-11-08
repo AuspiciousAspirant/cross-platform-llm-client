@@ -184,6 +184,9 @@ class DesktopInferenceEngine {
     required String modelPath,
     required int contextSize,
     bool allowGpu = true,
+    int? threads,
+    int? gpuLayers,
+    bool flashAttention = true,
     String? mmprojPath,
     List<String>? clusterEndpoints,
     void Function(double progress)? onProgress,
@@ -222,22 +225,24 @@ class DesktopInferenceEngine {
     _lastContextTokensTotal = contextSize;
     _lastContextTokensUsed = 0;
 
-    // Detect threads: use processor count - 2 (clamped between 2 and 16)
-    final threads = (Platform.numberOfProcessors - 2).clamp(2, 16);
+    // Detect threads: use processor count - 2 (clamped between 2 and 16) or user preference
+    final defaultThreads = (Platform.numberOfProcessors - 2).clamp(2, 16);
+    final effectiveThreads = threads != null && threads > 0 ? threads : defaultThreads;
 
     // Detect GPU & calculate offload layers
     _gpuLayers = 0;
     _gpuName = '';
     if (allowGpu) {
+      final requestedGpuLayers = gpuLayers ?? 99;
       if (Platform.isWindows) {
         _gpuName = 'DirectX / Vulkan GPU';
-        _gpuLayers = 99; // Llama.cpp clamps to actual model layers
+        _gpuLayers = requestedGpuLayers;
       } else if (Platform.isMacOS) {
         _gpuName = 'Apple Metal';
-        _gpuLayers = 99;
+        _gpuLayers = requestedGpuLayers;
       } else if (Platform.isLinux) {
         _gpuName = 'Vulkan / CUDA';
-        _gpuLayers = 99;
+        _gpuLayers = requestedGpuLayers;
       }
     }
 
@@ -247,9 +252,10 @@ class DesktopInferenceEngine {
     final args = <String>[
       '-m', modelPath,
       '-c', '$contextSize',
-      '-t', '$threads',
+      '-t', '$effectiveThreads',
       '--port', '$_port',
       '--host', '127.0.0.1',
+      if (flashAttention) '-fa',
       if (_gpuLayers > 0) ...['-ngl', '$_gpuLayers'],
       if (effectiveEndpoints.isNotEmpty) ...['--rpc', effectiveEndpoints.join(',')],
       if (mmprojPath != null && mmprojPath.isNotEmpty) ...['--mmproj', mmprojPath],

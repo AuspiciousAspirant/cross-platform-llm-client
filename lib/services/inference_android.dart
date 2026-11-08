@@ -3,8 +3,11 @@ import 'dart:ffi' show Abi;
 import 'dart:io' show Platform, Directory, File;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_litert_lm/flutter_litert_lm.dart';
+import 'package:get/get.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
+import '../core/constants.dart';
 import 'desktop_inference_engine.dart';
+import 'hive_service.dart';
 
 /// Whether the current platform supports local inference.
 bool get supportsLocalInference =>
@@ -103,10 +106,29 @@ class InferenceEngine {
       _isLiteRt = false;
       _controller = null;
       _desktopEngine = DesktopInferenceEngine();
+
+      int? userThreads;
+      int? userGpuLayers;
+      bool userFlashAttention = true;
+      try {
+        if (Get.isRegistered<HiveService>()) {
+          final hive = Get.find<HiveService>();
+          final t = hive.getSetting<int>(AppConstants.keyCpuThreads);
+          if (t != null && t > 0) userThreads = t;
+          final g = hive.getSetting<int>(AppConstants.keyGpuOffloadLayers);
+          if (g != null) userGpuLayers = g;
+          final fa = hive.getSetting<bool>(AppConstants.keyEnableFlashAttention);
+          if (fa != null) userFlashAttention = fa;
+        }
+      } catch (_) {}
+
       final dRes = await _desktopEngine!.loadModel(
         modelPath: modelPath,
         contextSize: contextSize,
         allowGpu: allowGgufGpu,
+        threads: userThreads,
+        gpuLayers: userGpuLayers,
+        flashAttention: userFlashAttention,
         mmprojPath: mmprojPath,
         onProgress: onProgress,
       );

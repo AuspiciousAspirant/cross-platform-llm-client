@@ -176,7 +176,7 @@ class DesktopRpcWorker {
       '0.0.0.0',
       '-p',
       '$port',
-      if (threads != null) ...['-c', '$threads'],
+      if (threads != null) ...['-t', '$threads'],
     ];
 
     try {

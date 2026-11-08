@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../controllers/settings_controller.dart';
@@ -106,6 +107,18 @@ class SettingsView extends GetView<SettingsController> {
                 },
                 builder: (ctx) => _buildLiteRtGroup(ctx),
               ),
+              if (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
+                _navRow(
+                  context,
+                  icon: Icons.memory_rounded,
+                  title: 'Desktop Hardware & Engine',
+                  value: controller.gpuOffloadLayers.value == 0
+                      ? 'CPU only'
+                      : controller.cpuThreads.value == 0
+                          ? 'Auto GPU'
+                          : '${controller.cpuThreads.value}T / GPU',
+                  builder: (ctx) => _buildDesktopInferenceGroup(ctx),
+                ),
               _navRow(
                 context,
                 icon: Icons.image_outlined,
@@ -647,6 +660,98 @@ class SettingsView extends GetView<SettingsController> {
             'Applies to both GGUF and LiteRT models. Takes effect the next '
             'time a model is loaded.',
             style: t.small),
+      ),
+    ]);
+  }
+
+  Widget _buildDesktopInferenceGroup(BuildContext context) {
+    final t = AppTokens.of(context);
+    final totalCores = Platform.numberOfProcessors;
+    return AppGroup(dividerIndent: 60, children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('CPU Threads', style: t.bodyStrong),
+            Text(
+              controller.cpuThreads.value == 0
+                  ? 'Auto (${(totalCores - 2).clamp(2, 16)} threads)'
+                  : '${controller.cpuThreads.value} threads',
+              style: t.caption.copyWith(color: t.accent),
+            ),
+          ],
+        ),
+      ),
+      SliderTheme(
+        data: SliderTheme.of(context).copyWith(
+          activeTrackColor: t.accent,
+          thumbColor: t.accent,
+        ),
+        child: Slider(
+          value: controller.cpuThreads.value.clamp(0, totalCores).toDouble(),
+          min: 0,
+          max: totalCores.toDouble(),
+          divisions: totalCores,
+          onChanged: (v) => controller.setCpuThreads(v.round()),
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: Text(
+          'Set to 0 for auto detection. Lower if the system feels sluggish during inference.',
+          style: t.small,
+        ),
+      ),
+      const Divider(height: 1),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('GPU Offload Layers', style: t.bodyStrong),
+            Text(
+              controller.gpuOffloadLayers.value >= 99
+                  ? 'Full Offload (99)'
+                  : controller.gpuOffloadLayers.value == 0
+                      ? 'CPU Only (0)'
+                      : '${controller.gpuOffloadLayers.value} layers',
+              style: t.caption.copyWith(color: t.accent),
+            ),
+          ],
+        ),
+      ),
+      SliderTheme(
+        data: SliderTheme.of(context).copyWith(
+          activeTrackColor: t.accent,
+          thumbColor: t.accent,
+        ),
+        child: Slider(
+          value: controller.gpuOffloadLayers.value.clamp(0, 99).toDouble(),
+          min: 0,
+          max: 99,
+          divisions: 99,
+          onChanged: (v) => controller.setGpuOffloadLayers(v.round()),
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: Text(
+          'Offload layers to local GPU (DirectX, Metal, Vulkan, CUDA). Decrease if you experience VRAM Out-of-Memory.',
+          style: t.small,
+        ),
+      ),
+      const Divider(height: 1),
+      SwitchListTile.adaptive(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        title: Text('Flash Attention (-fa)', style: t.bodyStrong),
+        subtitle: Text(
+          'Reduces memory footprint during context processing and speeds up inference.',
+          style: t.small,
+        ),
+        value: controller.enableFlashAttention.value,
+        onChanged: (val) => controller.setEnableFlashAttention(val),
+        activeColor: t.accent,
       ),
     ]);
   }
