@@ -15,6 +15,7 @@ import 'app_log_service.dart';
 import 'desktop_inference_engine.dart';
 import 'desktop_rpc_worker.dart';
 import 'hive_service.dart';
+import 'lan_cluster_discovery.dart';
 
 /// Diagnostics result for LAN network, ports, binaries, and memory.
 class ClusterDiagnosticsReport {
@@ -84,6 +85,9 @@ class ClusterService extends GetxService {
 
   final DesktopRpcWorker _desktopWorker = DesktopRpcWorker();
   DesktopRpcWorker get desktopWorker => _desktopWorker;
+
+  final LanClusterDiscovery _lanDiscovery = LanClusterDiscovery();
+  LanClusterDiscovery get lanDiscovery => _lanDiscovery;
 
   static bool get isDesktop =>
       !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
@@ -161,19 +165,38 @@ class ClusterService extends GetxService {
         infoPlugin.linuxInfo.then((info) => deviceName = info.name);
       }
       refreshWorkerStatus().then((_) {
-        if (worker.value.running) _watchWorker();
+        if (worker.value.running) {
+          _watchWorker();
+          if (role == ClusterRole.worker) _startBroadcastingWorker();
+        }
       });
       // A worker runs at full speed only while PrivateLM is on screen (it
       // borrows the app's priority), so keep the screen on while sharing.
-      ever<ClusterWorkerStatus>(worker, (_) => _updateKeepScreenOn());
+      ever<ClusterWorkerStatus>(worker, (s) {
+        _updateKeepScreenOn();
+        if (role == ClusterRole.worker && s.running && wifiAddress.value != null) {
+          _startBroadcastingWorker();
+        } else if (!s.running && !s.starting) {
+          _lanDiscovery.stopBroadcasting();
+        }
+      });
       ever<bool>(serving, (_) => _updateKeepScreenOn());
+      ever<String?>(wifiAddress, (ip) {
+        if (role == ClusterRole.worker && worker.value.running && ip != null) {
+          _startBroadcastingWorker();
+        }
+      });
       refreshWifiAddress();
+      if (role == ClusterRole.master) {
+        _startListeningForWorkers();
+      }
     }
   }
 
   @override
   void onClose() {
     _statusTimer?.cancel();
+    _lanDiscovery.dispose();
     if (isDesktop) {
       _desktopWorker.stop();
     }
@@ -202,6 +225,11 @@ class ClusterService extends GetxService {
       await stopWorker();
     }
     await _setEnabled(next == ClusterRole.master);
+    if (next == ClusterRole.master) {
+      _startListeningForWorkers();
+    } else {
+      _lanDiscovery.stopListening();
+    }
     if (next == ClusterRole.worker) await startWorker();
     await refreshWifiAddress();
   }
@@ -238,12 +266,15 @@ class ClusterService extends GetxService {
     } else {
       await LlamaCluster.startWorker();
     }
+    await refreshWifiAddress();
+    _startBroadcastingWorker();
     _watchWorker();
   }
 
   Future<void> stopWorker() async {
     _workerRequested.value = false;
     _statusTimer?.cancel();
+    _lanDiscovery.stopBroadcasting();
     if (isDesktop) {
       await _desktopWorker.stop();
     } else {
@@ -261,12 +292,33 @@ class ClusterService extends GetxService {
     _statusTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
       await refreshWorkerStatus();
       final s = worker.value;
+      if (s.running && !_lanDiscovery.isBroadcasting && wifiAddress.value != null) {
+        _startBroadcastingWorker();
+      }
       // Give the service a few seconds to come up before calling it stopped.
       if (!s.running && !s.starting && ++checks > 3) {
         _workerRequested.value = false;
+        _lanDiscovery.stopBroadcasting();
         _statusTimer?.cancel();
       }
     });
+  }
+
+  void _startBroadcastingWorker() {
+    if (!isSupported) return;
+    final host = wifiAddress.value;
+    if (host == null || host.isEmpty) return;
+    final s = worker.value;
+    final workerObj = ClusterWorker(
+      name: deviceName.isNotEmpty ? deviceName : (isDesktop ? 'Desktop Worker' : 'Worker'),
+      host: host,
+      port: LlamaCluster.defaultPort,
+      ramMb: s.ramMb > 0 ? s.ramMb : null,
+      bandwidth: s.bandwidth > 0 ? s.bandwidth : null,
+      model: deviceName.isNotEmpty ? deviceName : null,
+      id: s.id,
+    );
+    _lanDiscovery.startBroadcasting(worker: workerObj);
   }
 
   Future<void> refreshWorkerStatus() async {
@@ -404,16 +456,46 @@ class ClusterService extends GetxService {
 
   bool isAdded(ClusterWorker w) => workers.any((s) => s.endpoint == w.endpoint);
 
-  /// Looks for workers on the Wi-Fi (doesn't work on every router).
+  /// Looks for workers on the Wi-Fi / LAN via UDP discovery and platform mechanisms.
   Future<void> scanNearby() async {
     if (isScanning.value) return;
     isScanning.value = true;
+    _startListeningForWorkers();
     try {
       final list = await LlamaCluster.discover();
-      found.assignAll(list.where((w) => !isAdded(w)));
+      for (final w in list) {
+        if (!isAdded(w) && !found.any((f) => f.endpoint == w.endpoint)) {
+          found.add(w);
+        }
+      }
+    } catch (_) {
     } finally {
+      await Future.delayed(const Duration(milliseconds: 1500));
       isScanning.value = false;
     }
+  }
+
+  void _startListeningForWorkers() {
+    if (!isSupported) return;
+    _lanDiscovery.startListening(
+      selfWorkerId: worker.value.id,
+      onWorkerDiscovered: (discovered) {
+        if (isAdded(discovered)) return;
+        final existingIdx = found.indexWhere(
+          (w) =>
+              w.endpoint == discovered.endpoint ||
+              (discovered.id != null && w.id != null && w.id == discovered.id),
+        );
+        if (existingIdx >= 0) {
+          found[existingIdx] = discovered;
+        } else {
+          found.add(discovered);
+          Get.find<AppLogService>().info(
+            'Auto-discovered LAN worker: ${discovered.model ?? discovered.name} (${discovered.endpoint})',
+          );
+        }
+      },
+    );
   }
 
   Future<void> _setEnabled(bool value) async {

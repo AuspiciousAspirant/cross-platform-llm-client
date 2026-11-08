@@ -319,6 +319,8 @@ class _ClusterViewState extends State<ClusterView> {
 
   List<Widget> _masterSection(BuildContext context) {
     final t = AppTokens.of(context);
+    final isWide = MediaQuery.sizeOf(context).width >= 560;
+
     return [
       if (cluster.split.length > 1) ...[
         _SplitCard(shares: cluster.split),
@@ -333,24 +335,25 @@ class _ClusterViewState extends State<ClusterView> {
             : Icons.qr_code_scanner_rounded,
         onPressed: () => _scanQr(context),
       ),
-      SectionHeader('Workers (${cluster.workers.length})'),
+      SectionHeader('Active cluster workers (${cluster.workers.length})'),
       if (cluster.workers.isEmpty)
         const AppGroup(children: [
           EmptyState(
             icon: Icons.devices_other_rounded,
-            title: 'No workers yet',
-            message: 'On each other phone, open Phone cluster, choose Worker, '
-                'then scan the QR code it shows.',
+            title: 'No workers connected yet',
+            message: 'On each other phone or PC, open Phone cluster, choose Worker, '
+                'or tap "+ Add" on any discovered worker below.',
           ),
         ])
       else
         AppGroup(dividerIndent: 60, children: [
           for (final w in cluster.workers)
             AppRow(
-              icon: Icons.smartphone_rounded,
+              icon: _workerDeviceIcon(w),
               title: w.model ?? w.name,
               subtitle: [
                 w.endpoint,
+                _deviceType(w),
                 if (w.ramMb != null) '${_gb(w.ramMb!)} free',
                 if (w.bandwidth != null) '${w.bandwidth!.toStringAsFixed(1)} GB/s',
               ].join(' · '),
@@ -367,11 +370,13 @@ class _ClusterViewState extends State<ClusterView> {
         'fastest phones get the biggest share and phones that aren\'t needed '
         'are left out.',
       ),
-      const SectionHeader('Other ways to add'),
+      const SizedBox(height: 8),
+      SectionHeader('Nearby LAN workers (${cluster.found.length})'),
       Row(children: [
         PillButton(
-          label: cluster.isScanning.value ? 'Searching…' : 'Find nearby',
-          icon: Icons.wifi_find_rounded,
+          label: cluster.isScanning.value ? 'Scanning LAN…' : 'Scan LAN',
+          icon: cluster.isScanning.value ? Icons.sync_rounded : Icons.radar_rounded,
+          primary: !cluster.isScanning.value,
           onPressed: cluster.isScanning.value ? null : cluster.scanNearby,
         ),
         const SizedBox(width: 10),
@@ -380,24 +385,112 @@ class _ClusterViewState extends State<ClusterView> {
           icon: Icons.keyboard_rounded,
           onPressed: () => _enterIp(context),
         ),
+        if (cluster.isScanning.value) ...[
+          const SizedBox(width: 12),
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ],
       ]),
-      if (cluster.found.isNotEmpty) ...[
-        const SizedBox(height: 12),
+      if (cluster.isScanning.value) ...[
+        const SizedBox(height: 10),
+        const AppProgressBar(height: 3),
+      ],
+      const SizedBox(height: 12),
+      if (cluster.found.isNotEmpty)
         AppGroup(dividerIndent: 60, children: [
           for (final w in cluster.found)
             AppRow(
-              icon: Icons.smartphone_rounded,
+              icon: _workerDeviceIcon(w),
               title: w.model ?? w.name,
-              subtitle: w.endpoint,
-              trailing: PillButton(
-                label: 'Add',
-                primary: true,
-                onPressed: () => _report(cluster.addFound(w)),
+              subtitle: [
+                w.endpoint,
+                _deviceType(w),
+                if (!isWide && w.ramMb != null) '${_gb(w.ramMb!)} RAM',
+                if (!isWide && w.bandwidth != null) '${w.bandwidth!.toStringAsFixed(1)} GB/s',
+              ].join(' · '),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isWide && w.ramMb != null) ...[
+                    AppTag(
+                      '${_gb(w.ramMb!)} RAM',
+                      icon: Icons.memory_rounded,
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  if (isWide && w.bandwidth != null) ...[
+                    AppTag(
+                      '${w.bandwidth!.toStringAsFixed(1)} GB/s',
+                      icon: Icons.speed_rounded,
+                      color: t.green,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  PillButton(
+                    label: '+ Add',
+                    primary: true,
+                    icon: Icons.add_rounded,
+                    onPressed: () => _report(cluster.addFound(w)),
+                  ),
+                ],
               ),
             ),
+        ])
+      else if (cluster.isScanning.value)
+        const AppGroup(children: [
+          AppRow(
+            icon: Icons.radar_rounded,
+            title: 'Searching for LAN workers…',
+            subtitle: 'Listening on UDP port 50053 for zero-config announcements',
+          ),
+        ])
+      else
+        const AppGroup(children: [
+          AppRow(
+            icon: Icons.wifi_find_rounded,
+            title: 'No nearby workers detected',
+            subtitle: 'Start Worker mode on any device on this LAN, or tap Scan LAN',
+          ),
         ]),
-      ],
+      const SectionFootnote(
+        'PrivateLM workers announce their CPU, RAM, and memory bandwidth over UDP port 50053. '
+        'Discovered devices can be added to your cluster with one click.',
+      ),
     ];
+  }
+
+  IconData _workerDeviceIcon(ClusterWorker w) {
+    final name = '${w.model ?? ''} ${w.name}'.toLowerCase();
+    if (name.contains('win') || name.contains('pc') || name.contains('desktop')) {
+      return Icons.desktop_windows_rounded;
+    }
+    if (name.contains('mac') || name.contains('darwin') || name.contains('apple')) {
+      return Icons.laptop_mac_rounded;
+    }
+    if (name.contains('linux') || name.contains('ubuntu')) {
+      return Icons.terminal_rounded;
+    }
+    return Icons.smartphone_rounded;
+  }
+
+  String _deviceType(ClusterWorker w) {
+    final name = '${w.model ?? ''} ${w.name}'.toLowerCase();
+    if (name.contains('win') || name.contains('pc') || name.contains('desktop')) {
+      return 'Windows PC';
+    }
+    if (name.contains('mac') || name.contains('darwin') || name.contains('apple')) {
+      return 'macOS';
+    }
+    if (name.contains('linux') || name.contains('ubuntu')) {
+      return 'Linux';
+    }
+    if (name.contains('pixel') || name.contains('galaxy') || name.contains('android')) {
+      return 'Android';
+    }
+    return 'LAN Worker';
   }
 
   Future<void> _scanQr(BuildContext context) async {
