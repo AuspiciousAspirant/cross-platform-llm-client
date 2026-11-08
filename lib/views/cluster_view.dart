@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:get/get.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -8,6 +11,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../core/ui.dart';
 import '../services/cluster_service.dart';
+import '../services/desktop_rpc_worker.dart';
 
 /// Phone cluster: pick Master (runs the model) or Worker (lends this phone),
 /// and pair them by scanning the worker's QR code.
@@ -44,37 +48,54 @@ class _ClusterViewState extends State<ClusterView> {
     final t = AppTokens.of(context);
     return Scaffold(
       backgroundColor: t.bg,
-      appBar: appScreenBar(context, title: 'Phone cluster', showBack: true),
+      appBar: appScreenBar(context,
+          title: ClusterService.isDesktop
+              ? 'Distributed LAN Cluster'
+              : 'Phone cluster',
+          showBack: true),
       body: Obx(() {
         final role = cluster.role;
-        return ListView(
-          padding: kPagePadding,
-          children: [
-            const SizedBox(height: 8),
-            AppSegmented<ClusterRole>(
-              items: [
-                (ClusterRole.off, 'Off'),
-                if (ClusterService.canBeMaster) (ClusterRole.master, 'Master'),
-                (ClusterRole.worker, 'Worker'),
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: ListView(
+              padding: kPagePadding,
+              children: [
+                const SizedBox(height: 8),
+                AppSegmented<ClusterRole>(
+                  items: [
+                    (ClusterRole.off, 'Off'),
+                    if (ClusterService.canBeMaster) (ClusterRole.master, 'Master'),
+                    (ClusterRole.worker, 'Worker'),
+                  ],
+                  selected: role,
+                  onChanged: (newRole) async {
+                    if (newRole == ClusterRole.worker && ClusterService.isDesktop) {
+                      final bin = await cluster.desktopWorker.findRpcServerBinary();
+                      if (bin == null && context.mounted) {
+                        _showRpcServerSetupSheet(context);
+                      }
+                    }
+                    await cluster.setRole(newRole);
+                  },
+                ),
+                const SizedBox(height: 16),
+                if (role != ClusterRole.off && cluster.wifiAddress.value == null) ...[
+                  AppNotice(
+                    'Turn on Wi-Fi or local network. All devices in the cluster must be on the same local network.',
+                    icon: Icons.wifi_off_rounded,
+                    color: t.orange,
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                ...switch (role) {
+                  ClusterRole.off => _offSection(),
+                  ClusterRole.master => _masterSection(context),
+                  ClusterRole.worker => _workerSection(context),
+                },
               ],
-              selected: role,
-              onChanged: cluster.setRole,
             ),
-            const SizedBox(height: 16),
-            if (role != ClusterRole.off && cluster.wifiAddress.value == null) ...[
-              AppNotice(
-                'Turn on Wi-Fi. All phones in the cluster must be on the same Wi-Fi network.',
-                icon: Icons.wifi_off_rounded,
-                color: t.orange,
-              ),
-              const SizedBox(height: 16),
-            ],
-            ...switch (role) {
-              ClusterRole.off => _offSection(),
-              ClusterRole.master => _masterSection(context),
-              ClusterRole.worker => _workerSection(context),
-            },
-          ],
+          ),
         );
       }),
     );
@@ -103,15 +124,33 @@ class _ClusterViewState extends State<ClusterView> {
 
     final Widget body;
     if (s.state == 'error') {
-      body = _centered(context, [
-        Icon(Icons.error_outline_rounded, size: 40, color: t.red),
-        const SizedBox(height: 12),
-        Text('Worker stopped', style: t.bodyStrong),
-        const SizedBox(height: 4),
-        Text(s.error ?? 'Unknown error', style: t.caption, textAlign: TextAlign.center),
-        const SizedBox(height: 16),
-        PillButton(label: 'Try again', primary: true, onPressed: cluster.startWorker),
-      ]);
+      final isBinaryMissing = ClusterService.isDesktop &&
+          (s.error?.contains('rpc-server') == true ||
+              s.error?.contains('not found') == true);
+      body = isBinaryMissing
+          ? _desktopMissingBinaryCard(context)
+          : _centered(context, [
+              Icon(Icons.error_outline_rounded, size: 40, color: t.red),
+              const SizedBox(height: 12),
+              Text('Worker stopped', style: t.bodyStrong),
+              const SizedBox(height: 4),
+              Text(s.error ?? 'Unknown error',
+                  style: t.caption, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              PillButton(
+                  label: 'Try again',
+                  primary: true,
+                  onPressed: () async {
+                    if (ClusterService.isDesktop) {
+                      final bin = await cluster.desktopWorker.findRpcServerBinary();
+                      if (bin == null && context.mounted) {
+                        _showRpcServerSetupSheet(context);
+                        return;
+                      }
+                    }
+                    cluster.startWorker();
+                  }),
+            ]);
     } else if (s.peer != null) {
       body = _centered(context, [
         _PulsingDot(color: t.green),
@@ -130,7 +169,14 @@ class _ClusterViewState extends State<ClusterView> {
       body = _centered(context, [
         const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2.5)),
         const SizedBox(height: 16),
-        Text(s.running ? 'Waiting for Wi-Fi…' : 'Measuring this phone…', style: t.caption),
+        Text(
+          s.running
+              ? 'Waiting for network…'
+              : (ClusterService.isDesktop
+                  ? 'Starting RPC worker…'
+                  : 'Measuring this phone…'),
+          style: t.caption,
+        ),
       ]);
     } else {
       body = _centered(context, [
@@ -143,17 +189,70 @@ class _ClusterViewState extends State<ClusterView> {
           child: QrImageView(data: qr, size: 220, padding: EdgeInsets.zero),
         ),
         const SizedBox(height: 16),
-        Text('Scan this from the master phone', style: t.bodyStrong),
+        Text('Scan this from the master device', style: t.bodyStrong),
         const SizedBox(height: 6),
         Row(mainAxisSize: MainAxisSize.min, children: [
           StatusDot(t.green, size: 8),
           const SizedBox(width: 6),
-          Text('Ready · ${cluster.wifiAddress.value}', style: t.caption),
+          Text(
+            'Ready · ${cluster.wifiAddress.value ?? "Local network"}',
+            style: t.caption,
+          ),
         ]),
+        if (cluster.wifiAddress.value != null) ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: t.cardBg,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: t.divider),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.lan_rounded, size: 16, color: t.accent),
+                const SizedBox(width: 8),
+                SelectableText(
+                  '${cluster.wifiAddress.value}:${LlamaCluster.defaultPort}',
+                  style: t.bodyStrong.copyWith(
+                    fontFamily: 'monospace',
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                IconButton(
+                  icon: const Icon(Icons.copy_rounded, size: 16),
+                  tooltip: 'Copy IP and Port',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(
+                      text:
+                          '${cluster.wifiAddress.value}:${LlamaCluster.defaultPort}',
+                    ));
+                    showToast('Copied',
+                        '${cluster.wifiAddress.value}:${LlamaCluster.defaultPort}');
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'On your master device, scan the QR code or tap "Enter IP" to connect.',
+            style: t.small,
+            textAlign: TextAlign.center,
+          ),
+        ],
         const SizedBox(height: 16),
         Row(children: [
           Expanded(child: _Stat(label: 'Free memory', value: _gb(s.ramMb))),
-          Expanded(child: _Stat(label: 'Memory speed', value: '${s.bandwidth.toStringAsFixed(1)} GB/s')),
+          Expanded(
+            child: _Stat(
+              label: 'Memory speed',
+              value: '${s.bandwidth.toStringAsFixed(1)} GB/s',
+            ),
+          ),
         ]),
       ]);
     }
@@ -182,9 +281,13 @@ class _ClusterViewState extends State<ClusterView> {
       SectionFootnote(ClusterService.workerStopsWithApp
           ? 'Keep this device plugged in, on the same Wi-Fi, with PrivateLM open: '
               'iOS pauses apps in the background. Close PrivateLM to stop sharing.'
-          : 'Keep this phone plugged in and on the same Wi-Fi, with PrivateLM '
-              'open: the screen stays on while sharing, because Android slows '
-              'background work. Set Phone cluster to Off to stop.'),
+          : ClusterService.isDesktop
+              ? 'Keep PrivateLM open on the same local network: rpc-server '
+                  'lends this PC\'s CPU and memory to master devices on your LAN. '
+                  'Set Phone cluster to Off to stop.'
+              : 'Keep this phone plugged in and on the same Wi-Fi, with PrivateLM '
+                  'open: the screen stays on while sharing, because Android slows '
+                  'background work. Set Phone cluster to Off to stop.'),
     ];
   }
 
@@ -201,9 +304,13 @@ class _ClusterViewState extends State<ClusterView> {
         const SizedBox(height: 16),
       ],
       PrimaryButton(
-        label: 'Scan a worker\'s QR code',
-        icon: Icons.qr_code_scanner_rounded,
-        onPressed: _scanQr,
+        label: ClusterService.isDesktop
+            ? 'Add worker by IP'
+            : 'Scan a worker\'s QR code',
+        icon: ClusterService.isDesktop
+            ? Icons.add_link_rounded
+            : Icons.qr_code_scanner_rounded,
+        onPressed: () => _scanQr(context),
       ),
       SectionHeader('Workers (${cluster.workers.length})'),
       if (cluster.workers.isEmpty)
@@ -272,7 +379,11 @@ class _ClusterViewState extends State<ClusterView> {
     ];
   }
 
-  Future<void> _scanQr() async {
+  Future<void> _scanQr(BuildContext context) async {
+    if (ClusterService.isDesktop) {
+      await _enterIp(context);
+      return;
+    }
     final code = await Get.to<String>(() => const _QrScanPage());
     if (code != null) await _report(cluster.addFromQr(code));
   }
@@ -303,6 +414,63 @@ class _ClusterViewState extends State<ClusterView> {
     if (input != null) await _report(cluster.addManual(input));
   }
 
+  Widget _desktopMissingBinaryCard(BuildContext context) {
+    final t = AppTokens.of(context);
+    return _centered(context, [
+      Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: t.accent.withValues(alpha: 0.12),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(Icons.dns_rounded, size: 36, color: t.accent),
+      ),
+      const SizedBox(height: 14),
+      Text('llama.cpp RPC Server Required',
+          style: t.bodyStrong.copyWith(fontSize: 17)),
+      const SizedBox(height: 6),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Text(
+          'To act as a worker, this PC needs the official llama.cpp ${DesktopRpcWorker.binaryName} binary in the bin folder.',
+          style: t.caption,
+          textAlign: TextAlign.center,
+        ),
+      ),
+      const SizedBox(height: 18),
+      Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        alignment: WrapAlignment.center,
+        children: [
+          PillButton(
+            label: 'Install RPC Server',
+            icon: Icons.download_rounded,
+            primary: true,
+            onPressed: () => _showRpcServerSetupSheet(context),
+          ),
+          PillButton(
+            label: 'GitHub Releases',
+            icon: Icons.open_in_new_rounded,
+            onPressed: DesktopRpcWorker.openReleasesPage,
+          ),
+          PillButton(
+            label: 'Check again',
+            onPressed: () => cluster.startWorker(),
+          ),
+        ],
+      ),
+    ]);
+  }
+
+  void _showRpcServerSetupSheet(BuildContext context) {
+    showAppSheet(
+      context,
+      title: 'PC Worker Setup',
+      builder: (ctx) => _RpcServerSetupSheet(cluster: cluster),
+    );
+  }
+
   Future<void> _report(Future<String?> adding) async {
     final error = await adding;
     if (error != null) {
@@ -311,6 +479,228 @@ class _ClusterViewState extends State<ClusterView> {
       showToast('Worker added', 'Used the next time you load a GGUF model.',
           tone: ToastTone.success);
     }
+  }
+}
+
+class _RpcServerSetupSheet extends StatefulWidget {
+  final ClusterService cluster;
+  const _RpcServerSetupSheet({required this.cluster});
+
+  @override
+  State<_RpcServerSetupSheet> createState() => _RpcServerSetupSheetState();
+}
+
+class _RpcServerSetupSheetState extends State<_RpcServerSetupSheet> {
+  bool _isDownloading = false;
+  double _progress = 0.0;
+  String _statusMessage = '';
+  String? _error;
+  String _binDir = '';
+
+  @override
+  void initState() {
+    super.initState();
+    DesktopRpcWorker.getPreferredBinDir().then((dir) {
+      if (mounted) setState(() => _binDir = dir);
+    });
+  }
+
+  Future<void> _startDownload() async {
+    setState(() {
+      _isDownloading = true;
+      _error = null;
+      _progress = 0.05;
+      _statusMessage = 'Connecting to GitHub...';
+    });
+
+    final success = await widget.cluster.desktopWorker.downloadAndInstallRpcServer(
+      onProgress: (p, status) {
+        if (mounted) {
+          setState(() {
+            _progress = p;
+            _statusMessage = status;
+          });
+        }
+      },
+    );
+
+    if (!mounted) return;
+
+    if (success) {
+      showToast('RPC Server Installed', 'Starting worker service...',
+          tone: ToastTone.success);
+      Navigator.of(context).pop();
+      await widget.cluster.startWorker();
+    } else {
+      setState(() {
+        _isDownloading = false;
+        _error =
+            'Automatic download could not complete. You can manually download the release zip from GitHub and extract ${DesktopRpcWorker.binaryName} into the bin folder.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = AppTokens.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: t.accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.dns_rounded, size: 24, color: t.accent),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('llama.cpp RPC Server',
+                        style: t.bodyStrong.copyWith(fontSize: 17)),
+                    const SizedBox(height: 2),
+                    Text(
+                        'Turn this PC into a high-performance compute node for your cluster.',
+                        style: t.caption),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          if (_isDownloading) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: t.cardBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: t.divider),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(_statusMessage, style: t.bodyStrong),
+                      ),
+                      Text('${(_progress * 100).toInt()}%', style: t.caption),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: _progress.clamp(0.0, 1.0),
+                      backgroundColor: t.fill,
+                      color: t.accent,
+                      minHeight: 6,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            if (_error != null) ...[
+              AppNotice(_error!,
+                  icon: Icons.warning_amber_rounded, color: t.orange),
+              const SizedBox(height: 14),
+            ],
+            PrimaryButton(
+              label: 'One-Click Download & Install',
+              icon: Icons.download_rounded,
+              onPressed: _startDownload,
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: t.cardBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: t.divider),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Manual Installation', style: t.bodyStrong),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Download llama.cpp release zip from GitHub, extract ${DesktopRpcWorker.binaryName} (and runtime DLLs) into:',
+                    style: t.caption,
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: t.fill,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: SelectableText(
+                      _binDir.isNotEmpty
+                          ? _binDir
+                          : 'bin/${DesktopRpcWorker.binaryName}',
+                      style: t.small.copyWith(fontFamily: 'monospace'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      PillButton(
+                        label: 'Open bin folder',
+                        icon: Icons.folder_open_rounded,
+                        onPressed: () {
+                          if (_binDir.isNotEmpty) {
+                            DesktopRpcWorker.openFolder(_binDir);
+                          }
+                        },
+                      ),
+                      PillButton(
+                        label: 'GitHub Releases',
+                        icon: Icons.open_in_new_rounded,
+                        onPressed: DesktopRpcWorker.openReleasesPage,
+                      ),
+                      PillButton(
+                        label: 'Check again',
+                        primary: true,
+                        onPressed: () async {
+                          final bin = await widget.cluster.desktopWorker
+                              .findRpcServerBinary();
+                          if (bin != null) {
+                            if (context.mounted) Navigator.of(context).pop();
+                            await widget.cluster.startWorker();
+                          } else {
+                            showToast('Not Found',
+                                'Could not find ${DesktopRpcWorker.binaryName} yet.',
+                                tone: ToastTone.error);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 
@@ -447,13 +837,21 @@ class _QrScanPage extends StatefulWidget {
 }
 
 class _QrScanPageState extends State<_QrScanPage> {
-  final MobileScannerController _controller =
-      MobileScannerController(formats: const [BarcodeFormat.qrCode]);
+  MobileScannerController? _controller;
   bool _done = false;
 
   @override
+  void initState() {
+    super.initState();
+    if (kIsWeb || !ClusterService.isDesktop) {
+      _controller =
+          MobileScannerController(formats: const [BarcodeFormat.qrCode]);
+    }
+  }
+
+  @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
@@ -469,6 +867,27 @@ class _QrScanPageState extends State<_QrScanPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (ClusterService.isDesktop) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Scan worker QR code')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'QR code scanning is not supported on desktop. Please enter worker IP manually.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16),
+            ),
+          ),
+        ),
+      );
+    }
+    final controller = _controller;
+    if (controller == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -477,7 +896,7 @@ class _QrScanPageState extends State<_QrScanPage> {
         title: const Text('Scan worker QR code'),
       ),
       body: Stack(children: [
-        MobileScanner(controller: _controller, onDetect: _onDetect),
+        MobileScanner(controller: controller, onDetect: _onDetect),
         Center(
           child: Container(
             width: 240,

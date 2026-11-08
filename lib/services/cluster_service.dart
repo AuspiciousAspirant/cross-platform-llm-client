@@ -12,6 +12,7 @@ import 'package:llama_flutter_android/llama_flutter_android.dart';
 import '../core/constants.dart';
 import '../core/ui.dart';
 import 'app_log_service.dart';
+import 'desktop_rpc_worker.dart';
 import 'hive_service.dart';
 
 /// What this phone does in a phone cluster.
@@ -47,11 +48,16 @@ class _Phone {
 class ClusterService extends GetxService {
   final HiveService _hive = Get.find<HiveService>();
 
-  static bool get isSupported => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+  final DesktopRpcWorker _desktopWorker = DesktopRpcWorker();
+  DesktopRpcWorker get desktopWorker => _desktopWorker;
 
-  /// Running a model across workers is Android-only for now; iOS devices
-  /// can be workers (their GPU serves a master's layers).
-  static bool get canBeMaster => !kIsWeb && Platform.isAndroid;
+  static bool get isDesktop =>
+      !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+
+  static bool get isSupported => !kIsWeb;
+
+  /// Running a model across workers: Android and Desktop PC (Windows, Linux, macOS).
+  static bool get canBeMaster => !kIsWeb && !Platform.isIOS;
 
   /// iOS can't stop the worker without closing the app.
   static bool get workerStopsWithApp => !kIsWeb && Platform.isIOS;
@@ -108,10 +114,17 @@ class ClusterService extends GetxService {
     final saved = _hive.getSetting<List>(AppConstants.keyClusterWorkers) ?? const [];
     workers.assignAll(saved.whereType<Map>().map(ClusterWorker.fromMap));
     if (isSupported) {
+      final infoPlugin = DeviceInfoPlugin();
       if (Platform.isIOS) {
-        DeviceInfoPlugin().iosInfo.then((info) => deviceName = info.modelName);
-      } else {
-        DeviceInfoPlugin().androidInfo.then((info) => deviceName = info.model);
+        infoPlugin.iosInfo.then((info) => deviceName = info.modelName);
+      } else if (Platform.isAndroid) {
+        infoPlugin.androidInfo.then((info) => deviceName = info.model);
+      } else if (Platform.isWindows) {
+        infoPlugin.windowsInfo.then((info) => deviceName = info.computerName);
+      } else if (Platform.isMacOS) {
+        infoPlugin.macOsInfo.then((info) => deviceName = info.computerName);
+      } else if (Platform.isLinux) {
+        infoPlugin.linuxInfo.then((info) => deviceName = info.name);
       }
       refreshWorkerStatus().then((_) {
         if (worker.value.running) _watchWorker();
@@ -127,6 +140,9 @@ class ClusterService extends GetxService {
   @override
   void onClose() {
     _statusTimer?.cancel();
+    if (isDesktop) {
+      _desktopWorker.stop();
+    }
     super.onClose();
   }
 
@@ -182,14 +198,23 @@ class ClusterService extends GetxService {
     }
     _workerRequested.value = true;
     worker.value = const ClusterWorkerStatus(state: 'starting');
-    await LlamaCluster.startWorker();
+    if (isDesktop) {
+      await _desktopWorker.start(port: LlamaCluster.defaultPort);
+      await refreshWorkerStatus();
+    } else {
+      await LlamaCluster.startWorker();
+    }
     _watchWorker();
   }
 
   Future<void> stopWorker() async {
     _workerRequested.value = false;
     _statusTimer?.cancel();
-    await LlamaCluster.stopWorker();
+    if (isDesktop) {
+      await _desktopWorker.stop();
+    } else {
+      await LlamaCluster.stopWorker();
+    }
     await Future.delayed(const Duration(milliseconds: 600));
     await refreshWorkerStatus();
   }
@@ -212,21 +237,48 @@ class ClusterService extends GetxService {
 
   Future<void> refreshWorkerStatus() async {
     try {
-      worker.value = await LlamaCluster.workerStatus();
+      if (isDesktop) {
+        worker.value = await _desktopWorker.getStatus();
+      } else {
+        worker.value = await LlamaCluster.workerStatus();
+      }
     } catch (e) {
       Get.find<AppLogService>().error('Cluster worker status failed', details: e);
     }
   }
 
-  /// Finds this device's IPv4 address on Wi-Fi (wlan* on Android, en0 on
-  /// iOS), if any.
+  /// Finds this device's IPv4 address on Wi-Fi or local Ethernet LAN.
   Future<void> refreshWifiAddress() async {
     try {
       final interfaces = await NetworkInterface.list(type: InternetAddressType.IPv4);
-      final wifi = interfaces.where((i) => i.name.startsWith('wlan') || i.name == 'en0');
-      wifiAddress.value = wifi.isEmpty || wifi.first.addresses.isEmpty
-          ? null
-          : wifi.first.addresses.first.address;
+      final preferred = interfaces.where((i) {
+        final lower = i.name.toLowerCase();
+        // Ignore virtual adapters (WSL, Hyper-V vEthernet, Docker, Tailscale)
+        if (lower.contains('vethernet') ||
+            lower.contains('virtual') ||
+            lower.contains('vmware') ||
+            lower.contains('vbox') ||
+            lower.contains('docker') ||
+            lower.contains('wsl') ||
+            lower.contains('tailscale')) {
+          return false;
+        }
+        return lower.contains('wlan') ||
+            lower.contains('wi-fi') ||
+            lower.contains('wifi') ||
+            lower.contains('en0') ||
+            lower.contains('eth') ||
+            lower.contains('ethernet');
+      }).expand((i) => i.addresses).where((a) => !a.isLoopback && !a.address.startsWith('169.254.')).toList();
+
+      final nonLoopback = interfaces
+          .expand((i) => i.addresses)
+          .where((a) => !a.isLoopback && !a.address.startsWith('169.254.'))
+          .toList();
+
+      wifiAddress.value = preferred.isNotEmpty
+          ? preferred.first.address
+          : (nonLoopback.isNotEmpty ? nonLoopback.first.address : null);
     } catch (_) {
       wifiAddress.value = null;
     }
@@ -369,10 +421,17 @@ class ClusterService extends GetxService {
 
     final modelMb = await File(modelPath).length() / (1024 * 1024);
     final needMb = modelMb * 1.1; // + KV cache and working buffers
-    _localSpeed ??= await LlamaCluster.benchmark();
+    _localSpeed ??= isDesktop
+        ? await _desktopWorker.benchmark()
+        : await LlamaCluster.benchmark();
+    final localFreeMb = isDesktop
+        ? (worker.value.ramMb > 0
+            ? worker.value.ramMb
+            : (await _desktopWorker.getStatus()).ramMb)
+        : await LlamaCluster.localFreeRamMb();
     // Free RAM: workers report theirs when they start. The master also runs
     // the app and the KV cache, so it offers less of its own.
-    final master = _Phone(null, await LlamaCluster.localFreeRamMb() * 0.7, _localSpeed!);
+    final master = _Phone(null, localFreeMb * 0.7, _localSpeed!);
     final phones = [
       master,
       for (final w in available)
