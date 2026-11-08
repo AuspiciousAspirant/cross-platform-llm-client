@@ -1,0 +1,6 @@
+# Flutter-related
+**/flutter/ephemeral/
+**/flutter/generated_plugins.cmake
+
+# Build output
+build/
