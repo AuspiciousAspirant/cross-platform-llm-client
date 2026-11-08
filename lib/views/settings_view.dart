@@ -31,9 +31,12 @@ class SettingsView extends GetView<SettingsController> {
         final device = Get.find<DeviceInfoService>();
         final showUpdates =
             UpdateService.isSupported && Get.isRegistered<UpdateService>();
-        return ListView(
-          padding: kPagePadding,
-          children: [
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 860),
+            child: ListView(
+              padding: kPagePadding,
+              children: [
             const SectionHeader('General',
                 padding: EdgeInsets.fromLTRB(4, 8, 4, 8)),
             AppGroup(dividerIndent: 60, children: [
@@ -157,8 +160,10 @@ class SettingsView extends GetView<SettingsController> {
               ),
             ]),
           ],
-        );
-      }),
+        ),
+      ),
+    );
+  }),
     );
   }
 

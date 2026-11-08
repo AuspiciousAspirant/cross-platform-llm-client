@@ -31,21 +31,21 @@ class HomeView extends GetView<HomeController> {
         label: 'Settings'),
   ];
 
-  bool get _isWide {
-    // Force bottom navbar for all layouts per user request
-    return false;
-  }
+  bool _isWide(BuildContext context) =>
+      MediaQuery.of(context).size.width >= 800;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isWide = _isWide(context);
     return Obx(() => Scaffold(
           key: controller.scaffoldKey,
           backgroundColor: isDark ? Colors.black : Colors.white,
-          drawer: const ChatDrawer(),
+          drawer: isWide ? null : const ChatDrawer(),
           drawerScrimColor: Colors.black.withValues(alpha: isDark ? 0.6 : 0.32),
           // Edge-swipe only where the sidebar makes sense.
-          drawerEnableOpenDragGesture: controller.currentTab.value == 0,
+          drawerEnableOpenDragGesture:
+              controller.currentTab.value == 0 && !isWide,
           drawerEdgeDragWidth: 28,
           body: Obx(() {
             final content = IndexedStack(
@@ -57,7 +57,7 @@ class HomeView extends GetView<HomeController> {
                 SettingsView()
               ],
             );
-            if (_isWide) {
+            if (isWide) {
               return Row(children: [
                 _buildSidebar(context, isDark),
                 VerticalDivider(
@@ -72,7 +72,7 @@ class HomeView extends GetView<HomeController> {
             return content;
           }),
           bottomNavigationBar:
-              _isWide ? null : _buildBottomNav(context, isDark),
+              isWide ? null : _buildBottomNav(context, isDark),
         ));
   }
 
@@ -148,16 +148,49 @@ class HomeView extends GetView<HomeController> {
       width: 76,
       color: isDark ? Colors.black : Colors.white,
       child: Column(children: [
-        // const SizedBox(height: 20),
-        // Image.asset(
-        //   'assets/icons/appicon.png',
-        //   width: 40,
-        //   height: 40,
-        // ),
-        // const SizedBox(height: 20),
+        SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 14, bottom: 12),
+            child: Center(
+              child: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.10)
+                        : Colors.black.withValues(alpha: 0.08),
+                    width: 0.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color:
+                          Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Image.asset(
+                  'assets/icons/appicon.png',
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Icon(
+                    Icons.memory_rounded,
+                    size: 22,
+                    color: accent,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
         Expanded(child: Obx(() {
           final current = controller.currentTab.value;
           return ListView.builder(
+            padding: const EdgeInsets.symmetric(vertical: 4),
             itemCount: _tabs.length,
             itemBuilder: (_, i) {
               final tab = _tabs[i];
@@ -165,28 +198,57 @@ class HomeView extends GetView<HomeController> {
               return Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                child: Material(
-                  color:
-                      sel ? accent.withValues(alpha: 0.12) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
+                child: Tooltip(
+                  message: tab.label,
+                  preferBelow: false,
+                  waitDuration: const Duration(milliseconds: 300),
+                  child: Material(
+                    color: sel
+                        ? accent.withValues(alpha: 0.12)
+                        : Colors.transparent,
                     borderRadius: BorderRadius.circular(12),
-                    onTap: () => controller.changeTab(i),
-                    child: SizedBox(
-                      height: 52,
-                      child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(sel ? tab.activeIcon : tab.icon,
-                                color: sel ? accent : muted, size: 20),
-                            const SizedBox(height: 3),
-                            Text(tab.label,
-                                style: GoogleFonts.inter(
-                                    fontSize: 10,
-                                    fontWeight:
-                                        sel ? FontWeight.w600 : FontWeight.w400,
-                                    color: sel ? accent : muted)),
-                          ]),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      hoverColor: isDark
+                          ? Colors.white.withValues(alpha: 0.06)
+                          : Colors.black.withValues(alpha: 0.04),
+                      onTap: () {
+                        if (!sel) Haptics.selectionClick();
+                        controller.changeTab(i);
+                      },
+                      child: Container(
+                        height: 52,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border: sel
+                              ? Border.all(
+                                  color: accent.withValues(alpha: 0.28),
+                                  width: 0.5,
+                                )
+                              : null,
+                        ),
+                        child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 160),
+                                child: Icon(
+                                  sel ? tab.activeIcon : tab.icon,
+                                  key: ValueKey(sel),
+                                  color: sel ? accent : muted,
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(tab.label,
+                                  style: GoogleFonts.inter(
+                                      fontSize: 10,
+                                      fontWeight: sel
+                                          ? FontWeight.w600
+                                          : FontWeight.w400,
+                                      color: sel ? accent : muted)),
+                            ]),
+                      ),
                     ),
                   ),
                 ),

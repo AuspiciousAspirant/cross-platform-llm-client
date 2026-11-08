@@ -67,23 +67,28 @@ class ModelView extends GetView<ModelController> {
         color: t.accent,
         child: Obx(() {
           final scope = controller.modelScope.value;
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
-            children: [
-              _buildScopeToggle(context),
-              const SizedBox(height: 16),
-              _buildActiveModelBanner(context),
-              _buildActiveDownloadsBanner(context),
-              if (scope == 'local') ...[
-                _buildImportingProgress(context),
-                ..._buildLibrary(context),
-              ] else if (scope == 'browse') ...[
-                _buildFeatured(context),
-                _buildLocalFilterChips(context),
-                ..._buildBrowse(context),
-              ] else
-                _buildOnlineProviders(context),
-            ],
+          return Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 960),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+                children: [
+                  _buildScopeToggle(context),
+                  const SizedBox(height: 16),
+                  _buildActiveModelBanner(context),
+                  _buildActiveDownloadsBanner(context),
+                  if (scope == 'local') ...[
+                    _buildImportingProgress(context),
+                    ..._buildLibrary(context),
+                  ] else if (scope == 'browse') ...[
+                    _buildFeatured(context),
+                    _buildLocalFilterChips(context),
+                    ..._buildBrowse(context),
+                  ] else
+                    _buildOnlineProviders(context),
+                ],
+              ),
+            ),
           );
         }),
       ),

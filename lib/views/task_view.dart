@@ -53,9 +53,14 @@ class TaskView extends GetView<TaskController> {
                     ),
                   ],
                 ),
-          body: current == null
-              ? _buildTaskList(context)
-              : _buildTaskDetail(context, current),
+          body: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 860),
+              child: current == null
+                  ? _buildTaskList(context)
+                  : _buildTaskDetail(context, current),
+            ),
+          ),
         ),
       );
     });

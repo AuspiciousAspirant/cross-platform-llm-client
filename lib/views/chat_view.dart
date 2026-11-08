@@ -42,9 +42,12 @@ class ChatView extends GetView<ChatController> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    Widget scaffold = Scaffold(
+    final isDesktop = MediaQuery.of(context).size.width >= 900;
+
+    Widget chatScaffold = Scaffold(
       backgroundColor: isDark ? Colors.black : Colors.white,
-      appBar: _appBar(context, isDark),
+      drawer: isDesktop ? null : const ChatDrawer(),
+      appBar: _appBar(context, isDark, isDesktop: isDesktop),
       body: Column(
         children: [
           _modelLoadingBar(context, isDark),
@@ -72,10 +75,19 @@ class ChatView extends GetView<ChatController> {
                 padding: const EdgeInsets.only(top: 8, bottom: 8),
                 itemCount: n + (streaming ? 1 : 0),
                 itemBuilder: (_, i) {
+                  final Widget item;
                   if (i == n && streaming) {
-                    return _streamBubble(context, text, isDark);
+                    item = _streamBubble(context, text, isDark);
+                  } else {
+                    item = ChatBubble(message: controller.messages[i]);
                   }
-                  return ChatBubble(message: controller.messages[i]);
+                  return Align(
+                    alignment: Alignment.center,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 860),
+                      child: item,
+                    ),
+                  );
                 },
               ),
             );
@@ -85,22 +97,44 @@ class ChatView extends GetView<ChatController> {
       ),
     );
 
+    Widget body;
+    if (isDesktop) {
+      body = Row(
+        children: [
+          const SizedBox(
+            width: 280,
+            child: ChatDrawer(isDocked: true),
+          ),
+          VerticalDivider(
+            width: 0.5,
+            thickness: 0.5,
+            color: _sep(context),
+          ),
+          Expanded(child: chatScaffold),
+        ],
+      );
+    } else {
+      body = chatScaffold;
+    }
+
     if (Platform.isIOS) {
       return GestureDetector(
         onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
         behavior: HitTestBehavior.translucent,
-        child: scaffold,
+        child: body,
       );
     }
-    return scaffold;
+    return body;
   }
 
   // ── AppBar ──
-  PreferredSizeWidget _appBar(BuildContext context, bool isDark) {
+  PreferredSizeWidget _appBar(BuildContext context, bool isDark,
+      {bool isDesktop = false}) {
     return AppBar(
       backgroundColor: isDark ? Colors.black : Colors.white,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
+      automaticallyImplyLeading: false,
       bottom: PreferredSize(
         preferredSize: const Size.fromHeight(0.5),
         child: Obx(() => Container(
@@ -109,16 +143,18 @@ class ChatView extends GetView<ChatController> {
                 ? Colors.transparent
                 : _sep(context))),
       ),
-      titleSpacing: 0,
-      leadingWidth: 52,
-      leading: IconButton(
-        tooltip: 'Chats',
-        onPressed: () {
-          FocusManager.instance.primaryFocus?.unfocus();
-          Get.find<HomeController>().openSidebar();
-        },
-        icon: SidebarGlyph(color: isDark ? Colors.white : Colors.black),
-      ),
+      titleSpacing: isDesktop ? 20 : 0,
+      leadingWidth: isDesktop ? 0 : 52,
+      leading: isDesktop
+          ? null
+          : IconButton(
+              tooltip: 'Chats',
+              onPressed: () {
+                FocusManager.instance.primaryFocus?.unfocus();
+                Get.find<HomeController>().openSidebar();
+              },
+              icon: SidebarGlyph(color: isDark ? Colors.white : Colors.black),
+            ),
       title: Obx(() {
         final text = isDark ? Colors.white : Colors.black;
         // Home: a quiet wordmark — the model card below carries the status.
@@ -432,33 +468,39 @@ class ChatView extends GetView<ChatController> {
       final inf = Get.find<InferenceService>();
       if (!inf.isLoadingModel.value) return const SizedBox.shrink();
       final pct = (inf.modelLoadProgress.value * 100).round();
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-        child:
-            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Row(children: [
-            Expanded(
-              child: Text('Loading model',
-                  style: GoogleFonts.inter(
-                      fontSize: 12.5,
-                      color: Theme.of(context).hintColor,
-                      fontWeight: FontWeight.w500)),
-            ),
-            Text('$pct%',
-                style: GoogleFonts.inter(
-                    fontSize: 12.5,
-                    color: Theme.of(context).hintColor,
-                    fontFeatures: const [FontFeature.tabularFigures()])),
-          ]),
-          const SizedBox(height: 6),
-          ClipRRect(
-              borderRadius: BorderRadius.circular(2),
-              child: LinearProgressIndicator(
-                  value: inf.modelLoadProgress.value,
-                  backgroundColor: _sep(context),
-                  color: _appleBlue(context),
-                  minHeight: 3)),
-        ]),
+      return Align(
+        alignment: Alignment.center,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 860),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Row(children: [
+                Expanded(
+                  child: Text('Loading model',
+                      style: GoogleFonts.inter(
+                          fontSize: 12.5,
+                          color: Theme.of(context).hintColor,
+                          fontWeight: FontWeight.w500)),
+                ),
+                Text('$pct%',
+                    style: GoogleFonts.inter(
+                        fontSize: 12.5,
+                        color: Theme.of(context).hintColor,
+                        fontFeatures: const [FontFeature.tabularFigures()])),
+              ]),
+              const SizedBox(height: 6),
+              ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(
+                      value: inf.modelLoadProgress.value,
+                      backgroundColor: _sep(context),
+                      color: _appleBlue(context),
+                      minHeight: 3)),
+            ]),
+          ),
+        ),
       );
     });
   }
@@ -483,7 +525,8 @@ class ChatView extends GetView<ChatController> {
         if (isImageGen)
           Container(
             constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.82),
+                maxWidth:
+                    math.min(MediaQuery.of(context).size.width * 0.82, 720.0)),
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: _aiBubble(context),
@@ -559,11 +602,16 @@ class ChatView extends GetView<ChatController> {
   // ── Input Bar ──
   Widget _inputBar(BuildContext context, bool isDark) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
       color: isDark ? Colors.black : Colors.white,
       child: SafeArea(
-          top: false,
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
+        top: false,
+        child: Align(
+          alignment: Alignment.center,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 860),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
             // Attachment preview
             Obx(() {
               final name = controller.selectedFileName.value;
@@ -1059,8 +1107,11 @@ class ChatView extends GetView<ChatController> {
                     );
                   }),
                 ])),
-          ])),
-    );
+            ]),
+          ),
+        ),
+      ),
+    ));
   }
 
   /// Local mode with no text or image model loaded (cloud never counts).

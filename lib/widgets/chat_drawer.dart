@@ -35,7 +35,8 @@ class SidebarGlyph extends StatelessWidget {
 
 /// Conversation sidebar: search, new chat, and history grouped by date.
 class ChatDrawer extends StatefulWidget {
-  const ChatDrawer({super.key});
+  final bool isDocked;
+  const ChatDrawer({super.key, this.isDocked = false});
 
   @override
   State<ChatDrawer> createState() => _ChatDrawerState();
@@ -53,7 +54,11 @@ class _ChatDrawerState extends State<ChatDrawer> {
 
   ChatController get _chat => Get.find<ChatController>();
 
-  void _close() => Get.find<HomeController>().closeSidebar();
+  void _close() {
+    if (!widget.isDocked) {
+      Get.find<HomeController>().closeSidebar();
+    }
+  }
 
   void _newChat() {
     Haptics.selectionClick();
@@ -147,7 +152,9 @@ class _ChatDrawerState extends State<ChatDrawer> {
     final text = isDark ? Colors.white : const Color(0xFF0B0B0C);
     final muted = isDark ? const Color(0xFF8E8E93) : const Color(0xFF6E6E73);
     final accent = isDark ? const Color(0xFF0A84FF) : const Color(0xFF007AFF);
-    final bg = isDark ? const Color(0xFF0E0E10) : const Color(0xFFF7F7F8);
+    final bg = widget.isDocked
+        ? (isDark ? const Color(0xFF141416) : const Color(0xFFF7F7F8))
+        : (isDark ? const Color(0xFF0E0E10) : const Color(0xFFF7F7F8));
     final field = isDark
         ? Colors.white.withValues(alpha: 0.07)
         : Colors.black.withValues(alpha: 0.05);
@@ -155,56 +162,62 @@ class _ChatDrawerState extends State<ChatDrawer> {
         ? Colors.white.withValues(alpha: 0.08)
         : Colors.black.withValues(alpha: 0.06);
 
-    final width = (MediaQuery.of(context).size.width * 0.84).clamp(0.0, 340.0);
+    final width = widget.isDocked
+        ? double.infinity
+        : (MediaQuery.of(context).size.width * 0.84).clamp(0.0, 340.0);
 
-    return Drawer(
-      width: width,
-      backgroundColor: bg,
-      surfaceTintColor: Colors.transparent,
-      shape: const RoundedRectangleBorder(),
-      child: SafeArea(
-        child:
-            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    final content = SafeArea(
+      top: !widget.isDocked,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
           // Header
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 14, 8, 10),
+            padding: const EdgeInsets.fromLTRB(18, 14, 8, 10),
             child: Row(children: [
               Expanded(
                 child: Text('Chats',
                     style: GoogleFonts.inter(
-                        fontSize: 24,
+                        fontSize: 22,
                         fontWeight: FontWeight.w700,
-                        letterSpacing: -0.6,
+                        letterSpacing: -0.5,
                         color: text)),
               ),
               IconButton(
                 tooltip: 'New chat',
                 onPressed: _newChat,
-                icon: Icon(Icons.edit_square, size: 21, color: accent),
+                icon: Icon(Icons.edit_square, size: 20, color: accent),
               ),
             ]),
           ),
           // Search
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
             child: Container(
-              height: 38,
+              height: 36,
               decoration: BoxDecoration(
-                  color: field, borderRadius: BorderRadius.circular(10)),
+                  color: field,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.06)
+                        : Colors.black.withValues(alpha: 0.04),
+                    width: 0.5,
+                  )),
               child: TextField(
                 controller: _search,
                 onChanged: (v) =>
                     setState(() => _query = v.trim().toLowerCase()),
-                style: GoogleFonts.inter(fontSize: 15, color: text),
+                style: GoogleFonts.inter(fontSize: 14, color: text),
                 cursorColor: accent,
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
                   hintText: 'Search',
-                  hintStyle: GoogleFonts.inter(fontSize: 15, color: muted),
+                  hintStyle: GoogleFonts.inter(fontSize: 14, color: muted),
                   prefixIcon:
-                      Icon(Icons.search_rounded, size: 19, color: muted),
+                      Icon(Icons.search_rounded, size: 18, color: muted),
                   prefixIconConstraints:
-                      const BoxConstraints(minWidth: 36, minHeight: 38),
+                      const BoxConstraints(minWidth: 34, minHeight: 36),
                   suffixIcon: _query.isEmpty
                       ? null
                       : GestureDetector(
@@ -213,14 +226,14 @@ class _ChatDrawerState extends State<ChatDrawer> {
                             setState(() => _query = '');
                           },
                           child: Icon(Icons.cancel_rounded,
-                              size: 17, color: muted),
+                              size: 16, color: muted),
                         ),
                   filled: false,
                   border: InputBorder.none,
                   enabledBorder: InputBorder.none,
                   focusedBorder: InputBorder.none,
                   isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 9),
                 ),
               ),
             ),
@@ -266,14 +279,14 @@ class _ChatDrawerState extends State<ChatDrawer> {
 
             final groups = _group(all);
             return ListView(
-              padding: const EdgeInsets.fromLTRB(10, 4, 10, 16),
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 16),
               children: [
                 for (final g in groups) ...[
                   Padding(
                     padding: const EdgeInsets.fromLTRB(10, 14, 10, 6),
                     child: Text(g.$1,
                         style: GoogleFonts.inter(
-                            fontSize: 12.5,
+                            fontSize: 12,
                             fontWeight: FontWeight.w600,
                             color: muted)),
                   ),
@@ -292,13 +305,28 @@ class _ChatDrawerState extends State<ChatDrawer> {
           })),
           // Footer hint
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-            child: Text('Long-press a chat to delete it',
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: Text('Right-click or long-press to delete',
                 style: GoogleFonts.inter(
-                    fontSize: 12, color: muted.withValues(alpha: 0.8))),
+                    fontSize: 11.5, color: muted.withValues(alpha: 0.8))),
           ),
-        ]),
+        ],
       ),
+    );
+
+    if (widget.isDocked) {
+      return Container(
+        color: bg,
+        child: content,
+      );
+    }
+
+    return Drawer(
+      width: width,
+      backgroundColor: bg,
+      surfaceTintColor: Colors.transparent,
+      shape: const RoundedRectangleBorder(),
+      child: content,
     );
   }
 }
@@ -322,8 +350,9 @@ class _SessionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 1),
+      padding: const EdgeInsets.only(bottom: 2),
       child: Material(
         color: active ? selected : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
@@ -331,15 +360,19 @@ class _SessionRow extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
           onTap: onTap,
           onLongPress: onLongPress,
+          onSecondaryTap: onLongPress,
+          hoverColor: isDark
+              ? Colors.white.withValues(alpha: 0.05)
+              : Colors.black.withValues(alpha: 0.04),
           splashFactory: NoSplash.splashFactory,
           highlightColor: selected,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
             child: Text(session.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.inter(
-                    fontSize: 15,
+                    fontSize: 14.5,
                     letterSpacing: -0.15,
                     fontWeight: active ? FontWeight.w600 : FontWeight.w400,
                     color: text)),

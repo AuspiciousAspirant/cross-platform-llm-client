@@ -26,9 +26,12 @@ class ServerView extends GetView<ServerController> {
         final hasKey = controller.apiKey.value.trim().isNotEmpty;
         final error = controller.lastError.value;
 
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-          children: [
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 860),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+              children: [
             _StatusHero(controller: controller),
 
             if (error != null) ...[
@@ -153,8 +156,10 @@ class ServerView extends GetView<ServerController> {
               ),
             ],
           ],
-        );
-      }),
+        ),
+      ),
+    );
+  }),
     );
   }
 

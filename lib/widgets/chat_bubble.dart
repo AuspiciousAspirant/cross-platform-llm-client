@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -19,25 +20,38 @@ class ChatBubble extends StatelessWidget {
     final isUser = message.role == 'user';
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    final Widget content;
     // Premium Generated Image Card (Assistant only)
     if (!isUser && message.decodedImageBytes != null) {
-      return _buildGeneratedImageCard(context, isDark);
+      content = _buildGeneratedImageCard(context, isDark);
+    } else {
+      final visibleContent = message.fileName == null
+          ? message.content
+          : message.content.split('\n\nAttached file:').first;
+
+      if (isUser) {
+        content = _buildUser(context, isDark, visibleContent);
+      } else {
+        final thoughtParts =
+            splitThoughtTags(_cleanAssistantText(visibleContent));
+        final answerContent = thoughtParts.answer.trim();
+        content = _buildAssistant(context, isDark, thoughtParts, answerContent);
+      }
     }
 
-    final visibleContent = message.fileName == null
-        ? message.content
-        : message.content.split('\n\nAttached file:').first;
-
-    if (isUser) return _buildUser(context, isDark, visibleContent);
-
-    final thoughtParts = splitThoughtTags(_cleanAssistantText(visibleContent));
-    final answerContent = thoughtParts.answer.trim();
-    return _buildAssistant(context, isDark, thoughtParts, answerContent);
+    return Align(
+      alignment: Alignment.center,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 860),
+        child: content,
+      ),
+    );
   }
 
   // ── User: compact neutral bubble on the right ──
   Widget _buildUser(BuildContext context, bool isDark, String text) {
-    final maxW = MediaQuery.of(context).size.width * 0.8;
+    final screenW = MediaQuery.of(context).size.width;
+    final maxW = math.min(screenW * 0.8, 620.0);
     return Padding(
       padding: const EdgeInsets.fromLTRB(48, 14, 16, 4),
       child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -254,6 +268,8 @@ class ChatBubble extends StatelessWidget {
   }
 
   Widget _buildGeneratedImageCard(BuildContext context, bool isDark) {
+    final screenW = MediaQuery.of(context).size.width;
+    final maxW = math.min(screenW * 0.82, 680.0);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
       child: Align(
@@ -262,7 +278,7 @@ class ChatBubble extends StatelessWidget {
           onTap: () => ImageViewer.show(context, message.imageBase64!),
           child: Container(
             constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.82,
+              maxWidth: maxW,
             ),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(20),
