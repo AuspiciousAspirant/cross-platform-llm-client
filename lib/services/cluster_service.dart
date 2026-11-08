@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io' show File, InternetAddressType, NetworkInterface, Platform;
+import 'dart:io' show File, InternetAddress, InternetAddressType, NetworkInterface, Platform, ServerSocket, Socket;
 import 'dart:math' as math;
 
 import 'package:device_info_plus/device_info_plus.dart';
@@ -12,8 +12,42 @@ import 'package:llama_flutter_android/llama_flutter_android.dart';
 import '../core/constants.dart';
 import '../core/ui.dart';
 import 'app_log_service.dart';
+import 'desktop_inference_engine.dart';
 import 'desktop_rpc_worker.dart';
 import 'hive_service.dart';
+
+/// Diagnostics result for LAN network, ports, binaries, and memory.
+class ClusterDiagnosticsReport {
+  final bool hasLanIp;
+  final String? lanIp;
+  final bool isPort50052Available;
+  final bool isWorkerRunning;
+  final bool hasWorkerBinary;
+  final String? workerBinaryPath;
+  final bool hasMasterBinary;
+  final String? masterBinaryPath;
+  final double memoryBandwidthGbps;
+  final int freeRamMb;
+  final List<String> networkAdapters;
+  final String statusSummary;
+  final bool isReady;
+
+  const ClusterDiagnosticsReport({
+    required this.hasLanIp,
+    this.lanIp,
+    required this.isPort50052Available,
+    required this.isWorkerRunning,
+    required this.hasWorkerBinary,
+    this.workerBinaryPath,
+    required this.hasMasterBinary,
+    this.masterBinaryPath,
+    required this.memoryBandwidthGbps,
+    required this.freeRamMb,
+    required this.networkAdapters,
+    required this.statusSummary,
+    required this.isReady,
+  });
+}
 
 /// What this phone does in a phone cluster.
 enum ClusterRole {
@@ -600,6 +634,87 @@ class ClusterService extends GetxService {
   }
 
   void clearSplit() => split.clear();
+
+  /// Runs comprehensive LAN network, port 50052, and hardware diagnostics.
+  Future<ClusterDiagnosticsReport> runDiagnostics() async {
+    await refreshWifiAddress();
+    final lanIp = wifiAddress.value;
+    final hasLan = lanIp != null && lanIp.isNotEmpty;
+
+    final adapters = <String>[];
+    try {
+      final interfaces = await NetworkInterface.list(type: InternetAddressType.IPv4);
+      for (final iface in interfaces) {
+        for (final addr in iface.addresses) {
+          if (!addr.isLoopback) {
+            adapters.add('${iface.name}: ${addr.address}');
+          }
+        }
+      }
+    } catch (_) {}
+
+    bool isPortAvailable = false;
+    final isRunning = worker.value.running;
+    if (isRunning) {
+      isPortAvailable = true;
+    } else {
+      try {
+        final server = await ServerSocket.bind(InternetAddress.anyIPv4, LlamaCluster.defaultPort);
+        await server.close();
+        isPortAvailable = true;
+      } catch (_) {
+        isPortAvailable = false;
+      }
+    }
+
+    final speed = isDesktop
+        ? await _desktopWorker.benchmark()
+        : await LlamaCluster.benchmark();
+
+    final freeRam = isDesktop
+        ? (worker.value.ramMb > 0
+            ? worker.value.ramMb
+            : (await _desktopWorker.getStatus()).ramMb)
+        : await LlamaCluster.localFreeRamMb();
+
+    String? workerBin;
+    String? masterBin;
+    if (isDesktop) {
+      workerBin = await _desktopWorker.findRpcServerBinary();
+      masterBin = await DesktopInferenceEngine().findServerBinary();
+    }
+
+    final hasWorker = !isDesktop || workerBin != null;
+    final hasMaster = !isDesktop || masterBin != null;
+    final ready = hasLan && isPortAvailable && hasWorker;
+
+    String summary;
+    if (!hasLan) {
+      summary = 'No active LAN IP found. Connect to Wi-Fi or local Ethernet.';
+    } else if (!isPortAvailable) {
+      summary = 'Port 50052 is blocked or occupied by another application.';
+    } else if (isDesktop && !hasWorker) {
+      summary = 'rpc-server binary is missing. Run installer in Cluster view.';
+    } else {
+      summary = 'Ready for LAN distributed model offloading on port 50052.';
+    }
+
+    return ClusterDiagnosticsReport(
+      hasLanIp: hasLan,
+      lanIp: lanIp,
+      isPort50052Available: isPortAvailable,
+      isWorkerRunning: isRunning,
+      hasWorkerBinary: hasWorker,
+      workerBinaryPath: workerBin,
+      hasMasterBinary: hasMaster,
+      masterBinaryPath: masterBin,
+      memoryBandwidthGbps: speed,
+      freeRamMb: freeRam,
+      networkAdapters: adapters,
+      statusSummary: summary,
+      isReady: ready,
+    );
+  }
 
   static String _gb(double mb) => '${(mb / 1024).toStringAsFixed(1)} GB';
 }

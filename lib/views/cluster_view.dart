@@ -25,6 +25,8 @@ class ClusterView extends StatefulWidget {
 class _ClusterViewState extends State<ClusterView> {
   final ClusterService cluster = Get.find<ClusterService>();
   Timer? _wifiTimer;
+  ClusterDiagnosticsReport? _lastReport;
+  bool _isRunningDiag = false;
 
   @override
   void initState() {
@@ -35,6 +37,23 @@ class _ClusterViewState extends State<ClusterView> {
     // Pick up Wi-Fi being turned on while this screen is open.
     _wifiTimer = Timer.periodic(
         const Duration(seconds: 3), (_) => cluster.refreshWifiAddress());
+    _runDiagnostics();
+  }
+
+  Future<void> _runDiagnostics() async {
+    if (_isRunningDiag) return;
+    setState(() => _isRunningDiag = true);
+    try {
+      final report = await cluster.runDiagnostics();
+      if (mounted) {
+        setState(() {
+          _lastReport = report;
+          _isRunningDiag = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isRunningDiag = false);
+    }
   }
 
   @override
@@ -93,6 +112,8 @@ class _ClusterViewState extends State<ClusterView> {
                   ClusterRole.master => _masterSection(context),
                   ClusterRole.worker => _workerSection(context),
                 },
+                const SizedBox(height: 20),
+                _buildDiagnosticsSection(context),
               ],
             ),
           ),
@@ -461,6 +482,149 @@ class _ClusterViewState extends State<ClusterView> {
         ],
       ),
     ]);
+  }
+
+  Widget _buildDiagnosticsSection(BuildContext context) {
+    final t = AppTokens.of(context);
+    final report = _lastReport;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionHeader('LAN Diagnostics & Benchmark'),
+        AppCard(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.monitor_heart_outlined, color: t.accent, size: 20),
+                  const SizedBox(width: 8),
+                  Text('Cluster Readiness', style: t.bodyStrong),
+                  const Spacer(),
+                  if (_isRunningDiag)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    PillButton(
+                      label: report == null ? 'Run Self-Test' : 'Re-test',
+                      icon: Icons.play_arrow_rounded,
+                      onPressed: _runDiagnostics,
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (report == null)
+                Text(
+                  'Verify port 50052 availability, test memory bandwidth, and validate LAN adapters.',
+                  style: t.caption,
+                )
+              else ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: (report.isReady ? t.green : t.orange).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: (report.isReady ? t.green : t.orange).withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      StatusDot(report.isReady ? t.green : t.orange, size: 8),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          report.statusSummary,
+                          style: t.small.copyWith(
+                            color: report.isReady ? t.green : t.orange,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _Stat(
+                        label: 'LAN IP',
+                        value: report.lanIp ?? 'Not on LAN',
+                      ),
+                    ),
+                    Expanded(
+                      child: _Stat(
+                        label: 'Port 50052',
+                        value: report.isWorkerRunning
+                            ? 'Listening'
+                            : (report.isPort50052Available ? 'Available' : 'Blocked'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _Stat(
+                        label: 'Memory Speed',
+                        value: '${report.memoryBandwidthGbps.toStringAsFixed(1)} GB/s',
+                      ),
+                    ),
+                    Expanded(
+                      child: _Stat(
+                        label: 'Free RAM',
+                        value: _gb(report.freeRamMb.toDouble()),
+                      ),
+                    ),
+                  ],
+                ),
+                if (ClusterService.isDesktop) ...[
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 10),
+                  Text('Local Tooling Binaries', style: t.small.copyWith(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(
+                        report.hasWorkerBinary ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                        size: 16,
+                        color: report.hasWorkerBinary ? t.green : t.red,
+                      ),
+                      const SizedBox(width: 6),
+                      Text('rpc-server (Worker): ', style: t.caption),
+                      Text(
+                        report.hasWorkerBinary ? 'Ready' : 'Missing',
+                        style: t.caption.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const Spacer(),
+                      Icon(
+                        report.hasMasterBinary ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                        size: 16,
+                        color: report.hasMasterBinary ? t.green : t.red,
+                      ),
+                      const SizedBox(width: 6),
+                      Text('llama-server (Master): ', style: t.caption),
+                      Text(
+                        report.hasMasterBinary ? 'Ready' : 'Missing',
+                        style: t.caption.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   void _showRpcServerSetupSheet(BuildContext context) {

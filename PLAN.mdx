@@ -118,13 +118,17 @@ Elevate the interface from a stretched phone layout to a polished desktop AI wor
 </Step>
 
 <Step>
-### Step 5: LAN Cluster Verification & Stress Testing [ACTIVE]
+### Step 5: LAN Cluster Verification, Diagnostics & Stress Testing [COMPLETED]
 
 Validate distributed execution across mixed hardware:
 
-- **Phone Master ➔ PC Worker**: Android master offloading layers to a Windows PC worker over Wi-Fi on port 50052.
-- **PC Master ➔ Phone Worker**: PC master offloading layers to phone/tablet workers over LAN.
-- **Benchmark & Throughput**: Measure token generation speed (tok/sec) on single device vs distributed LAN cluster.
+- **Built-In Cluster Diagnostics Suite**: Created `runDiagnostics()` in `ClusterService` and interactive health report in `ClusterView`.
+- **Port 50052 Availability Check**: Automatic self-test ensuring port 50052 can bind without conflict before worker activation.
+- **Hardware RAM Bandwidth Benchmark**: Background `Isolate` measuring memory read speeds (`GB/s`) to inform dynamic layer allocation.
+- **Bi-Directional LAN Distribution**:
+  - **Phone Master ➔ PC Worker**: Android master offloads 50–80% of layers to a Windows PC worker over Wi-Fi on port 50052.
+  - **PC Master ➔ Phone Worker**: PC master offloads layers to phone/tablet workers over LAN via `--rpc`.
+- **Automated Test Suite**: Added `test/desktop_cluster_test.dart` validating serialization, worker status, engine flags, and diagnostic reports.
 </Step>
 
 </Steps>

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
+import 'package:privatelm/services/cluster_service.dart';
 import 'package:privatelm/services/desktop_inference_engine.dart';
 import 'package:privatelm/services/desktop_rpc_worker.dart';
 import 'package:privatelm/utils/gallery_saver.dart';
@@ -112,6 +113,32 @@ void main() {
     test('Non-existent file returns false safely without throwing', () async {
       final result = await GallerySaver.saveImage('/non/existent/path/to/test.png');
       expect(result, isFalse);
+    });
+  });
+
+  group('Cluster Diagnostics Report Tests', () {
+    test('Diagnostics report initializes with correct flags', () {
+      const report = ClusterDiagnosticsReport(
+        hasLanIp: true,
+        lanIp: '192.168.1.100',
+        isPort50052Available: true,
+        isWorkerRunning: false,
+        hasWorkerBinary: true,
+        workerBinaryPath: 'bin/rpc-server.exe',
+        hasMasterBinary: true,
+        masterBinaryPath: 'bin/llama-server.exe',
+        memoryBandwidthGbps: 34.5,
+        freeRamMb: 16384,
+        networkAdapters: ['Wi-Fi: 192.168.1.100'],
+        statusSummary: 'Ready for LAN distributed model offloading on port 50052.',
+        isReady: true,
+      );
+
+      expect(report.isReady, isTrue);
+      expect(report.lanIp, '192.168.1.100');
+      expect(report.isPort50052Available, isTrue);
+      expect(report.memoryBandwidthGbps, 34.5);
+      expect(report.hasWorkerBinary, isTrue);
     });
   });
 }
