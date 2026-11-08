@@ -93,11 +93,7 @@ local_plugins/llama_flutter_android/ios/llama_ios/*
 !local_plugins/llama_flutter_android/ios/llama_ios/README.md
 
 # Local desktop inference binaries
-bin/*.exe
-bin/*.dll
-bin/*.so
-bin/*.dylib
-bin/*.zip
+bin/*
 !bin/README.md
 
 # Ephemeral agent playwright logs

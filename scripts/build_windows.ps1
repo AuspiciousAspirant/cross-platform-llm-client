@@ -103,6 +103,10 @@ if (-not (Test-Path "$buildOutput\privatelm.exe")) {
 # 5. Assemble standalone distribution directory
 Write-Host "`n[4/4] Assembling standalone distribution package..." -ForegroundColor Cyan
 $distDir = "$projectRoot\dist\PrivateLM-Windows-x64"
+if (Test-Path "$distDir\bin") {
+    # Preserve any custom or downloaded engine binaries
+    Copy-Item -Path "$distDir\bin\*" -Destination "$projectRoot\bin" -Recurse -Force -ErrorAction SilentlyContinue
+}
 if (Test-Path $distDir) {
     Remove-Item -Path $distDir -Recurse -Force
 }
