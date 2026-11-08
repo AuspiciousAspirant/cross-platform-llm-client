@@ -107,3 +107,4 @@ bin/*.zip
 tools/
 dist/
 .dart_temp/
+privatelm_hive/

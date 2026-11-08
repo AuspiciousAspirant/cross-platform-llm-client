@@ -111,6 +111,25 @@ New-Item -ItemType Directory -Force -Path $distDir | Out-Null
 # Copy application binaries and flutter engine
 Copy-Item -Path "$buildOutput\*" -Destination $distDir -Recurse -Force
 
+# Ensure release AOT library (app.so) is in data/ directory
+$appSoCandidates = @(
+    "$projectRoot\build\windows\app.so",
+    "$projectRoot\build\windows\x64\app.so",
+    "$projectRoot\build\windows\runner\Release\app.so"
+)
+foreach ($so in $appSoCandidates) {
+    if (Test-Path $so) {
+        if (-not (Test-Path "$distDir\data\app.so")) {
+            Copy-Item -Path $so -Destination "$distDir\data\app.so" -Force
+        }
+        if (-not (Test-Path "$buildOutput\data\app.so")) {
+            Copy-Item -Path $so -Destination "$buildOutput\data\app.so" -Force
+        }
+        Write-Host "-> Verified Release AOT library (app.so) in bundle data/ directory." -ForegroundColor Green
+        break
+    }
+}
+
 # Bundle local bin/ daemons if present
 if (Test-Path "$projectRoot\bin") {
     $targetBin = "$distDir\bin"

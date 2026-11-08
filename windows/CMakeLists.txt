@@ -78,3 +78,8 @@ install(CODE "
 " COMPONENT Runtime)
 install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
   DESTINATION "${INSTALL_BUNDLE_DATA_DIR}" COMPONENT Runtime)
+
+# Install AOT compiled Dart library (app.so) for Release / Profile builds
+install(FILES "${PROJECT_BUILD_DIR}/app.so"
+  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
+  COMPONENT Runtime OPTIONAL)

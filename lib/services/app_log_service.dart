@@ -1,3 +1,4 @@
+import 'dart:io' show File, FileMode;
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import '../core/redact.dart';
@@ -60,6 +61,9 @@ class AppLogService extends GetxService {
         details: detailText,
       ),
     );
+    try {
+      File('privatelm.log').writeAsStringSync('[$level] $message${detailText != null ? ' - $detailText' : ''}\n', mode: FileMode.append);
+    } catch (_) {}
     if (entries.length > 200) {
       entries.removeRange(200, entries.length);
     }

@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, File, FileMode, Directory;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 // import 'firebase_options.dart';
 import 'controllers/settings_controller.dart';
 import 'controllers/cloud_model_controller.dart';
@@ -67,8 +69,21 @@ void main() {
       ]);
     }
 
-    // Initialize Hive
-    await Hive.initFlutter();
+    // Initialize Hive with desktop & redirected folder fallback
+    try {
+      await Hive.initFlutter();
+    } catch (_) {
+      String fallbackPath = 'privatelm_hive';
+      try {
+        final supportDir = await getApplicationSupportDirectory();
+        fallbackPath = p.join(supportDir.path, 'privatelm_hive');
+      } catch (_) {}
+      final dir = Directory(fallbackPath);
+      if (!dir.existsSync()) {
+        dir.createSync(recursive: true);
+      }
+      Hive.init(dir.path);
+    }
 
     // Register global services
     await Get.putAsync(() => HiveService().init().timeout(
@@ -107,6 +122,9 @@ void main() {
           },
         ));
     FlutterError.onError = (details) {
+      try {
+        File('privatelm.log').writeAsStringSync('[FLUTTER ERROR] ${details.exceptionAsString()}\n${details.stack}\n', mode: FileMode.append);
+      } catch (_) {}
       FlutterError.presentError(details);
       appLog.error(
         details.exceptionAsString(),
@@ -115,6 +133,9 @@ void main() {
       crashReporting.recordFlutterFatal(details);
     };
     PlatformDispatcher.instance.onError = (error, stack) {
+      try {
+        File('privatelm.log').writeAsStringSync('[PLATFORM DISPATCHER ERROR] $error\n$stack\n', mode: FileMode.append);
+      } catch (_) {}
       appLog.error(
         error.toString(),
         details: stack.toString(),
@@ -149,6 +170,9 @@ void main() {
       settingsController.setThemeMode(settingsController.themeMode.value);
     });
   }, (error, stack) async {
+    try {
+      File('privatelm.log').writeAsStringSync('[FATAL ZONE ERROR] $error\n$stack\n', mode: FileMode.append);
+    } catch (_) {}
     if (Get.isRegistered<AppLogService>()) {
       Get.find<AppLogService>().error(
         'Uncaught zone error: $error',

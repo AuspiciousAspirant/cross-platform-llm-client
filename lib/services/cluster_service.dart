@@ -230,22 +230,24 @@ class ClusterService extends GetxService {
       }
       final infoPlugin = DeviceInfoPlugin();
       if (Platform.isIOS) {
-        infoPlugin.iosInfo.then((info) => deviceName = info.modelName);
+        infoPlugin.iosInfo.then((info) => deviceName = info.modelName).catchError((_) {});
       } else if (Platform.isAndroid) {
-        infoPlugin.androidInfo.then((info) => deviceName = info.model);
+        infoPlugin.androidInfo.then((info) => deviceName = info.model).catchError((_) {});
       } else if (Platform.isWindows) {
-        infoPlugin.windowsInfo.then((info) => deviceName = info.computerName);
+        infoPlugin.windowsInfo.then((info) => deviceName = info.computerName).catchError((_) {
+          deviceName = Platform.environment['COMPUTERNAME'] ?? 'Windows PC';
+        });
       } else if (Platform.isMacOS) {
-        infoPlugin.macOsInfo.then((info) => deviceName = info.computerName);
+        infoPlugin.macOsInfo.then((info) => deviceName = info.computerName).catchError((_) {});
       } else if (Platform.isLinux) {
-        infoPlugin.linuxInfo.then((info) => deviceName = info.name);
+        infoPlugin.linuxInfo.then((info) => deviceName = info.name).catchError((_) {});
       }
       refreshWorkerStatus().then((_) {
         if (worker.value.running) {
           _watchWorker();
           if (role == ClusterRole.worker) _startBroadcastingWorker();
         }
-      });
+      }).catchError((_) {});
       // A worker runs at full speed only while PrivateLM is on screen (it
       // borrows the app's priority), so keep the screen on while sharing.
       ever<ClusterWorkerStatus>(worker, (s) {
