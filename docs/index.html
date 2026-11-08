@@ -865,7 +865,7 @@
     <div class="topbar-actions">
       <div class="progress-pill">
         <span class="status-dot"></span>
-        <span id="top-progress-text">10/10 Milestones Completed</span>
+        <span id="top-progress-text">11/11 Milestones Completed</span>
       </div>
       <button class="btn-icon" id="theme-toggle" title="Toggle Dark/Light Mode">
         <svg id="moon-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -920,7 +920,7 @@
         </a>
         <a href="#roadmap" class="nav-link">
           <span>3. Roadmap Steps</span>
-          <span class="nav-badge" id="nav-step-count">10/10</span>
+          <span class="nav-badge" id="nav-step-count">11/11</span>
         </a>
         <a href="#sizing" class="nav-link">
           <span>4. Hardware Sizing</span>
@@ -1155,6 +1155,18 @@ Fine-grained memory optimization for long-context inference on distributed nodes
 > At 8k–16k token contexts, unquantized FP16 KV cache consumes 4 GB to 10 GB of RAM. Mobile operating systems enforce aggressive OOM (Out-of-Memory) Low Memory Killer (LMK) policies that silently terminate worker daemons when RAM exceeds budget. Prioritizing **Q8_0** (cutting KV memory by 50% with near-zero perplexity loss) and **Q4_0** (75% savings) ensures worker stability and prevents mid-conversation node disconnects during extended sessions.
 </Step>
 
+<Step>
+### Step 11: Unified In-App Engine Setup Assistant & GPU Architecture Detection [COMPLETED]
+
+Zero-friction automated runtime installation across desktop platforms:
+
+- **GPU Hardware Detection (`DesktopEngineManager.detectGpuHardware`)**: Fast (<20ms) non-blocking registry query detecting discrete graphics (NVIDIA GeForce/RTX, AMD Radeon, Intel Arc/Iris) without CIM/WMI permissions overhead.
+- **Backend Flavor Selection**: Supports NVIDIA CUDA 12, NVIDIA CUDA 11, Vulkan GPU (universal AMD/Intel/NVIDIA), and AVX2 CPU.
+- **Unified Engine Installer (`DesktopEngineManager.downloadAndInstallEngine`)**: Automated download from official `ggml-org/llama.cpp` releases unpacking both `llama-server` and `rpc-server` plus all runtime dynamic libraries (`.dll`, `.so`, `.dylib`) in a single step.
+- **Unified Setup Card Component (`UnifiedEngineSetupCard`)**: Embedded in `ClusterView` and `SettingsView` with live hardware spec badges, dual binary status chips (`llama-server` & `rpc-server`), download progress bar, and 1-click install.
+- **Automated Test Suite**: Added unit tests in `test/desktop_cluster_test.dart` validating binary name resolution, `EngineBinaryStatus` state transitions, `EngineBackendFlavor` naming, and `GpuDetectionResult` data structures.
+</Step>
+
 </Steps>
 
 ---
@@ -1184,8 +1196,8 @@ Fine-grained memory optimization for long-context inference on distributed nodes
     let currentTheme = localStorage.getItem(STORAGE_KEY_THEME) || 'dark';
     let milestoneChecked = JSON.parse(localStorage.getItem(STORAGE_KEY_CHECKED) || '{}');
 
-    // Default: all 10 completed
-    for (let i = 1; i <= 10; i++) {
+    // Default: all 11 completed
+    for (let i = 1; i <= 11; i++) {
       if (milestoneChecked[i] === undefined) {
         milestoneChecked[i] = true;
       }
@@ -1584,7 +1596,7 @@ Fine-grained memory optimization for long-context inference on distributed nodes
     }
 
     function updateMilestoneCounters() {
-      const total = 10;
+      const total = 11;
       const completed = Object.values(milestoneChecked).filter(Boolean).length;
       const progressText = `${completed}/${total} Milestones Completed (${Math.round((completed / total) * 100)}%)`;
       const topProgress = document.getElementById('top-progress-text');

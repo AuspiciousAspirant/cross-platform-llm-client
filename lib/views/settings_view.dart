@@ -5,6 +5,7 @@ import '../controllers/settings_controller.dart';
 import '../core/constants.dart';
 import '../core/ui.dart';
 import '../widgets/home_empty_state.dart' show providerLabel;
+import '../widgets/unified_engine_setup_card.dart';
 import '../services/inference_service.dart';
 import '../services/hive_service.dart';
 import '../services/local_image_service.dart';
@@ -667,7 +668,14 @@ class SettingsView extends GetView<SettingsController> {
   Widget _buildDesktopInferenceGroup(BuildContext context) {
     final t = AppTokens.of(context);
     final totalCores = Platform.numberOfProcessors;
-    return AppGroup(dividerIndent: 60, children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 12),
+          child: UnifiedEngineSetupCard(),
+        ),
+        AppGroup(dividerIndent: 60, children: [
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
         child: Row(
@@ -808,7 +816,8 @@ class SettingsView extends GetView<SettingsController> {
           style: t.small,
         ),
       ),
-    ]);
+    ]),
+  ]);
   }
 
   Widget _buildModelParametersGroup(BuildContext context) {

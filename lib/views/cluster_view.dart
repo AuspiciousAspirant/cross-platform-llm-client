@@ -12,6 +12,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../core/ui.dart';
 import '../services/cluster_service.dart';
 import '../services/desktop_rpc_worker.dart';
+import '../widgets/unified_engine_setup_card.dart';
 
 /// Phone cluster: pick Master (runs the model) or Worker (lends this phone),
 /// and pair them by scanning the worker's QR code.
@@ -723,8 +724,17 @@ class _ClusterViewState extends State<ClusterView> {
   void _showRpcServerSetupSheet(BuildContext context) {
     showAppSheet(
       context,
-      title: 'PC Worker Setup',
-      builder: (ctx) => _RpcServerSetupSheet(cluster: cluster),
+      title: 'Inference & RPC Setup Assistant',
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: UnifiedEngineSetupCard(
+          onInstalled: () {
+            Navigator.of(ctx).pop();
+            cluster.refreshWorkerStatus();
+            cluster.runDiagnostics();
+          },
+        ),
+      ),
     );
   }
 

@@ -14,6 +14,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import 'app_log_service.dart';
+import 'desktop_engine_manager.dart';
 import 'device_info_native.dart' as platform_info;
 import 'device_info_service.dart';
 import 'hive_service.dart';
@@ -454,139 +455,25 @@ class DesktopRpcWorker {
     return _workerId!;
   }
 
-  /// Downloads prebuilt `rpc-server` and essential libraries from official llama.cpp releases.
+  /// Downloads prebuilt `rpc-server` and essential libraries via DesktopEngineManager.
   Future<bool> downloadAndInstallRpcServer({
+    EngineBackendFlavor? flavor,
     void Function(double progress, String status)? onProgress,
   }) async {
-    final client = http.Client();
     try {
-      onProgress?.call(0.05, 'Querying latest llama.cpp release...');
-      final apiUrl = Uri.parse(llamaCppLatestApiUrl);
-      final res = await client.get(apiUrl, headers: {
-        'User-Agent': 'PrivateLM-LLM-Client',
-        'Accept': 'application/vnd.github.v3+json',
-      }).timeout(const Duration(seconds: 10));
-
-      String? downloadUrl;
-      String? archiveName;
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final assets = (data['assets'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-
-        for (final asset in assets) {
-          final name = (asset['name'] as String? ?? '').toLowerCase();
-          final url = asset['browser_download_url'] as String?;
-          if (url == null) continue;
-
-          if (Platform.isWindows) {
-            // Prefer AVX2 or general Windows x64 zip
-            if (name.contains('bin-win-avx2-x64') && name.endsWith('.zip')) {
-              downloadUrl = url;
-              archiveName = name;
-              break;
-            } else if (name.contains('bin-win') && name.contains('x64') && name.endsWith('.zip')) {
-              downloadUrl = url;
-              archiveName = name;
-            }
-          } else if (Platform.isMacOS) {
-            if (name.contains('bin-macos-arm64') && name.endsWith('.zip')) {
-              downloadUrl = url;
-              archiveName = name;
-              break;
-            } else if (name.contains('bin-macos') && name.endsWith('.zip')) {
-              downloadUrl = url;
-              archiveName = name;
-            }
-          } else if (Platform.isLinux) {
-            if (name.contains('bin-ubuntu-x64') && name.endsWith('.zip')) {
-              downloadUrl = url;
-              archiveName = name;
-              break;
-            }
-          }
-        }
-      }
-
-      // If GitHub API rate-limited or asset search didn't match, fallback to releases page
-      if (downloadUrl == null) {
-        _logError('Could not find compatible llama.cpp binary asset automatically.');
-        return false;
-      }
-
-      onProgress?.call(0.15, 'Downloading ${archiveName ?? 'llama.cpp archive'}...');
-      final dlReq = http.Request('GET', Uri.parse(downloadUrl));
-      final dlRes = await client.send(dlReq);
-
-      if (dlRes.statusCode != 200) {
-        throw Exception('Download returned HTTP ${dlRes.statusCode}');
-      }
-
-      final totalBytes = dlRes.contentLength ?? 0;
-      final bytes = <int>[];
-      int received = 0;
-
-      await for (final chunk in dlRes.stream) {
-        bytes.addAll(chunk);
-        received += chunk.length;
-        if (totalBytes > 0) {
-          final ratio = 0.15 + (received / totalBytes) * 0.70;
-          final mb = (received / (1024 * 1024)).toStringAsFixed(1);
-          final totalMb = (totalBytes / (1024 * 1024)).toStringAsFixed(1);
-          onProgress?.call(ratio, 'Downloading: $mb / $totalMb MB');
-        }
-      }
-
-      onProgress?.call(0.88, 'Extracting rpc-server binary...');
-      final archive = ZipDecoder().decodeBytes(bytes);
-
-      final binDir = await getPreferredBinDir();
-      final dir = Directory(binDir);
-      if (!await dir.exists()) await dir.create(recursive: true);
-
-      final bin = binaryName;
-      bool foundServer = false;
-
-      for (final file in archive) {
-        if (!file.isFile) continue;
-        final base = p.basename(file.name);
-
-        // Extract rpc-server and llama-server executables and all supporting runtime libraries (DLLs / SOs / dylibs)
-        final isServer = base.toLowerCase() == bin.toLowerCase();
-        final isLlamaServer = base.toLowerCase() == 'llama-server.exe' ||
-            base.toLowerCase() == 'llama-server' ||
-            base.toLowerCase() == 'llama-cli.exe' ||
-            base.toLowerCase() == 'llama-cli';
-        final isLib = (Platform.isWindows && base.toLowerCase().endsWith('.dll')) ||
-            (Platform.isLinux && base.contains('.so')) ||
-            (Platform.isMacOS && base.contains('.dylib'));
-
-        if (isServer || isLlamaServer || isLib) {
-          final outFile = File(p.join(dir.path, base));
-          await outFile.writeAsBytes(file.content as List<int>);
-          if (isServer) {
-            foundServer = true;
-            if (!Platform.isWindows) {
-              await Process.run('chmod', ['+x', outFile.path]);
-            }
-            _resolvedBinaryPath = outFile.path;
-          }
-        }
-      }
-
-      if (foundServer) {
-        onProgress?.call(1.0, 'Installation complete!');
+      final success = await DesktopEngineManager.downloadAndInstallEngine(
+        flavor: flavor,
+        onProgress: onProgress,
+      );
+      if (success) {
         state = 'stopped';
         error = null;
-        return true;
-      } else {
-        throw Exception('Archive did not contain $bin');
+        _resolvedBinaryPath = await findRpcBinary();
       }
+      return success;
     } catch (e) {
       _logError('Failed to download/install rpc-server: $e');
       return false;
-    } finally {
-      client.close();
     }
   }
 

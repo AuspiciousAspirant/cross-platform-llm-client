@@ -10,6 +10,7 @@ import 'package:llama_flutter_android/llama_flutter_android.dart'
 import 'package:archive/archive.dart';
 
 import 'device_info_native.dart';
+import 'desktop_engine_manager.dart';
 
 /// Result from model loading on desktop.
 class DesktopLoadResult {
@@ -649,139 +650,23 @@ class DesktopInferenceEngine {
     await unloadModel();
   }
 
-  /// Downloads prebuilt `llama-server` and essential libraries from official llama.cpp releases.
+  /// Downloads prebuilt `llama-server` and essential libraries via DesktopEngineManager.
   Future<bool> downloadAndInstallServer({
+    EngineBackendFlavor? flavor,
     void Function(double progress, String status)? onProgress,
   }) async {
-    final client = http.Client();
     try {
-      onProgress?.call(0.05, 'Querying latest llama.cpp release...');
-      final apiUrl = Uri.parse(llamaCppLatestApiUrl);
-      final res = await client.get(apiUrl, headers: {
-        'User-Agent': 'PrivateLM-LLM-Client',
-        'Accept': 'application/vnd.github.v3+json',
-      }).timeout(const Duration(seconds: 10));
-
-      String? downloadUrl;
-      String? archiveName;
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final assets = (data['assets'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-
-        for (final asset in assets) {
-          final name = (asset['name'] as String? ?? '').toLowerCase();
-          final url = asset['browser_download_url'] as String?;
-          if (url == null) continue;
-
-          if (Platform.isWindows) {
-            // Prefer Vulkan or AVX2 x64 release
-            if (name.contains('bin-win-vulkan-x64') && name.endsWith('.zip')) {
-              downloadUrl = url;
-              archiveName = name;
-              break;
-            } else if (name.contains('bin-win-avx2-x64') && name.endsWith('.zip')) {
-              downloadUrl = url;
-              archiveName = name;
-            } else if (name.contains('bin-win') && name.contains('x64') && name.endsWith('.zip')) {
-              downloadUrl ??= url;
-              archiveName ??= name;
-            }
-          } else if (Platform.isMacOS) {
-            if (name.contains('bin-macos-arm64') && name.endsWith('.zip')) {
-              downloadUrl = url;
-              archiveName = name;
-              break;
-            } else if (name.contains('bin-macos') && name.endsWith('.zip')) {
-              downloadUrl = url;
-              archiveName = name;
-            }
-          } else if (Platform.isLinux) {
-            if (name.contains('bin-ubuntu-x64') && name.endsWith('.zip')) {
-              downloadUrl = url;
-              archiveName = name;
-              break;
-            }
-          }
-        }
+      final success = await DesktopEngineManager.downloadAndInstallEngine(
+        flavor: flavor,
+        onProgress: onProgress,
+      );
+      if (success) {
+        _resolvedBinaryPath = await findServerBinary();
       }
-
-      if (downloadUrl == null) {
-        debugPrint('[DesktopEngine] Could not find compatible llama.cpp binary asset.');
-        return false;
-      }
-
-      onProgress?.call(0.15, 'Downloading ${archiveName ?? 'llama-server archive'}...');
-      final dlReq = http.Request('GET', Uri.parse(downloadUrl));
-      final dlRes = await client.send(dlReq);
-
-      if (dlRes.statusCode != 200) {
-        throw Exception('Download returned HTTP ${dlRes.statusCode}');
-      }
-
-      final totalBytes = dlRes.contentLength ?? 0;
-      final bytes = <int>[];
-      int received = 0;
-
-      await for (final chunk in dlRes.stream) {
-        bytes.addAll(chunk);
-        received += chunk.length;
-        if (totalBytes > 0) {
-          final ratio = 0.15 + (received / totalBytes) * 0.70;
-          final mb = (received / (1024 * 1024)).toStringAsFixed(1);
-          final totalMb = (totalBytes / (1024 * 1024)).toStringAsFixed(1);
-          onProgress?.call(ratio, 'Downloading: $mb / $totalMb MB');
-        }
-      }
-
-      onProgress?.call(0.88, 'Extracting llama-server binaries...');
-      final archive = ZipDecoder().decodeBytes(bytes);
-
-      final binDir = await getPreferredBinDir();
-      final dir = Directory(binDir);
-      if (!await dir.exists()) await dir.create(recursive: true);
-
-      final bin = binaryName;
-      bool foundTarget = false;
-
-      for (final file in archive) {
-        if (!file.isFile) continue;
-        final base = p.basename(file.name);
-
-        final isTarget = base.toLowerCase() == bin.toLowerCase() ||
-            base.toLowerCase() == 'rpc-server.exe' ||
-            base.toLowerCase() == 'rpc-server' ||
-            base.toLowerCase() == 'llama-cli.exe' ||
-            base.toLowerCase() == 'llama-cli';
-
-        final isLib = (Platform.isWindows && base.toLowerCase().endsWith('.dll')) ||
-            (Platform.isLinux && base.contains('.so')) ||
-            (Platform.isMacOS && base.contains('.dylib'));
-
-        if (isTarget || isLib) {
-          final outFile = File(p.join(dir.path, base));
-          await outFile.writeAsBytes(file.content as List<int>);
-          if (base.toLowerCase() == bin.toLowerCase()) {
-            foundTarget = true;
-            if (!Platform.isWindows) {
-              await Process.run('chmod', ['+x', outFile.path]);
-            }
-            _resolvedBinaryPath = outFile.path;
-          }
-        }
-      }
-
-      if (foundTarget) {
-        onProgress?.call(1.0, 'Installation complete!');
-        return true;
-      } else {
-        throw Exception('Archive did not contain $bin');
-      }
+      return success;
     } catch (e) {
       debugPrint('[DesktopEngine] Download failed: $e');
       return false;
-    } finally {
-      client.close();
     }
   }
 }

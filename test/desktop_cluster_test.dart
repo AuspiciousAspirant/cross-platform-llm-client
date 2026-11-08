@@ -4,6 +4,7 @@ import 'package:llama_flutter_android/llama_flutter_android.dart';
 import 'package:privatelm/services/cluster_service.dart';
 import 'package:privatelm/services/desktop_inference_engine.dart';
 import 'package:privatelm/services/desktop_rpc_worker.dart';
+import 'package:privatelm/services/desktop_engine_manager.dart';
 import 'package:privatelm/utils/gallery_saver.dart';
 
 void main() {
@@ -193,6 +194,71 @@ void main() {
       expect(report.isPort50052Available, isTrue);
       expect(report.memoryBandwidthGbps, 34.5);
       expect(report.hasWorkerBinary, isTrue);
+    });
+  });
+
+  group('Desktop Engine Manager & Hardware Detection Tests', () {
+    test('DesktopEngineManager binary names match platform conventions', () {
+      if (Platform.isWindows) {
+        expect(DesktopEngineManager.masterBinaryName, 'llama-server.exe');
+        expect(DesktopEngineManager.workerBinaryName, 'rpc-server.exe');
+      } else {
+        expect(DesktopEngineManager.masterBinaryName, 'llama-server');
+        expect(DesktopEngineManager.workerBinaryName, 'rpc-server');
+      }
+    });
+
+    test('EngineBinaryStatus correctly reports state and summaries', () {
+      const readyStatus = EngineBinaryStatus(
+        hasMaster: true,
+        hasWorker: true,
+        masterPath: 'bin/llama-server.exe',
+        workerPath: 'bin/rpc-server.exe',
+        binDirectory: 'bin',
+      );
+      expect(readyStatus.isFullyReady, isTrue);
+      expect(readyStatus.summary, 'Master & RPC worker operational');
+
+      const missingWorker = EngineBinaryStatus(
+        hasMaster: true,
+        hasWorker: false,
+        binDirectory: 'bin',
+      );
+      expect(missingWorker.isFullyReady, isFalse);
+      expect(missingWorker.summary, 'Master ready (rpc-server missing)');
+
+      const noneStatus = EngineBinaryStatus(
+        hasMaster: false,
+        hasWorker: false,
+        binDirectory: 'bin',
+      );
+      expect(noneStatus.isFullyReady, isFalse);
+      expect(noneStatus.summary, 'Engine binaries not installed');
+    });
+
+    test('EngineBackendFlavor exposes expected display and short names', () {
+      expect(EngineBackendFlavor.vulkan.shortName, 'Vulkan GPU');
+      expect(EngineBackendFlavor.cuda12.shortName, 'CUDA 12');
+      expect(EngineBackendFlavor.cpu.shortName, 'CPU (AVX2)');
+      expect(EngineBackendFlavor.vulkan.displayName, contains('Vulkan GPU'));
+      expect(EngineBackendFlavor.cuda12.displayName, contains('CUDA 12'));
+    });
+
+    test('GpuDetectionResult preserves vendor, recommended flavor and flags', () {
+      const detection = GpuDetectionResult(
+        vendor: GpuVendor.amd,
+        gpuName: 'AMD Radeon RX 6600',
+        hasVulkan: true,
+        hasNvidiaSmi: false,
+        recommendedFlavor: EngineBackendFlavor.vulkan,
+        recommendationReason: 'AMD GPU detected',
+      );
+
+      expect(detection.vendor, GpuVendor.amd);
+      expect(detection.gpuName, 'AMD Radeon RX 6600');
+      expect(detection.hasVulkan, isTrue);
+      expect(detection.hasNvidiaSmi, isFalse);
+      expect(detection.recommendedFlavor, EngineBackendFlavor.vulkan);
     });
   });
 }
