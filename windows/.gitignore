@@ -1,0 +1,17 @@
+# Flutter-related
+**/flutter/ephemeral/
+**/flutter/generated_plugins.cmake
+
+# Visual Studio cache/options directory
+.vs/
+
+# User-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build output
+x64/
+x86/
+build/
