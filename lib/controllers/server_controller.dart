@@ -18,6 +18,8 @@ class ServerController extends GetxController {
   final InferenceService inference = Get.find<InferenceService>();
   final OpenAiServerService _server = OpenAiServerService();
 
+  OpenAiServerService get server => _server;
+
   final isRunning = false.obs;
   final isStarting = false.obs;
   final localUrl = RxnString();
@@ -38,6 +40,9 @@ class ServerController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    if (!Get.isRegistered<OpenAiServerService>()) {
+      Get.put<OpenAiServerService>(_server);
+    }
     useApiKey.value =
         _hive.getSetting<bool>(AppConstants.keyServerUseApiKey) ?? false;
     apiKey.value = _hive.getSetting<String>(AppConstants.keyServerApiKey) ?? '';
@@ -53,6 +58,8 @@ class ServerController extends GetxController {
     final key = apiKey.value.trim();
     return requiresApiKey && key.isNotEmpty ? key : null;
   }
+
+  String? get effectiveApiKey => _effectiveApiKey;
 
   bool get hasLocalModel => inference.isModelLoaded.value;
 

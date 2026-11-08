@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import '../controllers/server_controller.dart';
 import '../core/ui.dart';
 import '../core/haptics.dart';
+import '../widgets/openai_client_presets_sheet.dart';
 
 class ServerView extends GetView<ServerController> {
   const ServerView({super.key});
@@ -18,7 +19,20 @@ class ServerView extends GetView<ServerController> {
 
     return Scaffold(
       backgroundColor: t.bg,
-      appBar: appScreenBar(context, title: 'Server'),
+      appBar: appScreenBar(
+        context,
+        title: 'Server',
+        actions: [
+          IconButton(
+            tooltip: 'Client Presets & Integrations',
+            icon: const Icon(Icons.hub_outlined, size: 21),
+            onPressed: () {
+              Haptics.lightImpact();
+              showOpenAiClientPresetsSheet(context);
+            },
+          ),
+        ],
+      ),
       body: Obx(() {
         final isRunning = controller.isRunning.value;
         final isStarting = controller.isStarting.value;
@@ -33,6 +47,46 @@ class ServerView extends GetView<ServerController> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
               children: [
             _StatusHero(controller: controller),
+
+            const SizedBox(height: 12),
+            AppCard(
+              onTap: () {
+                Haptics.lightImpact();
+                showOpenAiClientPresetsSheet(context);
+              },
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: t.accent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: t.accent.withValues(alpha: 0.25),
+                        width: 0.5,
+                      ),
+                    ),
+                    child: Icon(Icons.hub_outlined, color: t.accent, size: 20),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Client Integration Presets', style: t.bodyStrong),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Copy 1-click configs for Cursor, Open WebUI, Obsidian, Continue.dev & cURL',
+                          style: t.caption,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right_rounded, color: t.muted, size: 20),
+                ],
+              ),
+            ),
 
             if (error != null) ...[
               const SizedBox(height: 12),
@@ -153,6 +207,15 @@ class ServerView extends GetView<ServerController> {
                 lang: 'python',
                 code:
                     'from openai import OpenAI\n\nclient = OpenAI(\n    base_url="${controller.baseUrl}/v1",\n    api_key="${controller.requiresApiKey ? controller.apiKey.value : "not-needed"}"\n)\n\nresponse = client.chat.completions.create(\n    model="${controller.inference.loadedModelName.value}",\n    messages=[{"role": "user", "content": "Hello"}],\n)\nprint(response.choices[0].message.content)',
+              ),
+              const SizedBox(height: 16),
+              PillButton(
+                label: 'View All Client Presets (Cursor, Continue, WebUI, Obsidian)',
+                icon: Icons.hub_outlined,
+                onPressed: () {
+                  Haptics.lightImpact();
+                  showOpenAiClientPresetsSheet(context);
+                },
               ),
             ],
           ],

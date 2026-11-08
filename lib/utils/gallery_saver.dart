@@ -20,13 +20,19 @@ class GallerySaver {
           throw Exception('Cannot save images without gallery access permission.');
         }
       }
-      await Gal.putImageBytes(bytes, name: name);
+      await Gal.putImageBytes(bytes, name: name ?? 'privatelm_image');
       return 'gallery';
     } else {
       // Windows, Linux or fallback: write directly to user's Pictures or Downloads directory
       Directory? targetDir;
       try {
-        targetDir = await getPicturesDirectory() ?? await getDownloadsDirectory();
+        if (Platform.isWindows && Platform.environment['USERPROFILE'] != null) {
+          final pics = Directory(p.join(Platform.environment['USERPROFILE']!, 'Pictures'));
+          if (await pics.exists()) {
+            targetDir = pics;
+          }
+        }
+        targetDir ??= await getDownloadsDirectory();
       } catch (_) {
         targetDir = await getDownloadsDirectory();
       }
@@ -37,6 +43,21 @@ class GallerySaver {
       final file = File(p.join(targetDir.path, fileName));
       await file.writeAsBytes(bytes);
       return file.path;
+    }
+  }
+
+  /// Saves an existing image file at [filePath] to the gallery or Pictures folder.
+  static Future<bool> saveImage(String filePath) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        return false;
+      }
+      final bytes = await file.readAsBytes();
+      await saveImageBytes(bytes, name: p.basenameWithoutExtension(filePath));
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 }

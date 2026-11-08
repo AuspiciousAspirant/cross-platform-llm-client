@@ -1168,33 +1168,33 @@ Zero-friction automated runtime installation across desktop platforms:
 </Step>
 
 <Step>
-### Step 12: Mobile Worker Ambient Mode & Wi-Fi Keepalive Protection [PLANNED]
+### Step 12: Mobile Worker Ambient Mode & Wi-Fi Keepalive Protection [COMPLETED]
 
 Prevent mobile OS aggressive background throttling and Wi-Fi power-save sleep:
 
-- **Automatic High-Performance Wake-Lock**: Acquire wake-locks (`LlamaCluster.setKeepScreenOn(true)`) and Wi-Fi high-perf mode when the device enters `ClusterRole.worker`.
-- **Ambient OLED Worker View**: Ultra-low-power dim interface showing live node statistics (holding layers, RAM allocation, memory speed, IP address, and port 50052 status) while keeping the Wi-Fi modem and CPU threads active.
-- **Clean Platform Isolation**: Ensure mobile wake-lock channels are strictly guarded and never executed on desktop platforms.
+- **Automatic High-Performance Wake-Lock**: Acquire wake-locks (`LlamaCluster.setKeepScreenOn(true)`) and Wi-Fi high-perf mode when the device enters `ClusterRole.worker`. Guarded cleanly with `ClusterService.isDesktop` checks.
+- **Ambient OLED Worker View (`AmbientWorkerView`)**: Ultra-low-power pure black AMOLED interface showing live node statistics (holding layers, RAM allocation, memory speed, IP address, and port 50052 status) while keeping the Wi-Fi modem and CPU threads active.
+- **Clean Platform Isolation**: All mobile-only screen lock methods are guarded and bypassed on desktop platforms.
 </Step>
 
 <Step>
-### Step 13: 1-Click Distributed Cluster Benchmark & Throughput Comparator [PLANNED]
+### Step 13: 1-Click Distributed Cluster Benchmark & Throughput Comparator [COMPLETED]
 
 Empirical performance measurement and hardware verification:
 
-- **Standardized Synthetic Inference Benchmark**: Runs a controlled 128 prompt + 128 generation token benchmark across the distributed pipeline.
-- **Observed Metrics**: Time-To-First-Token (TTFT), prompt evaluation speed (`tok/s`), token generation throughput (`tok/s`), and network packet latency.
-- **Comparative Throughput Graph**: Side-by-side visual comparison in `ClusterView` showing Local Master Execution vs LAN Distributed Execution.
+- **Cluster Benchmark Service (`ClusterBenchmarkService`)**: Evaluates synthetic prompt tests against active inference engines measuring Time To First Token (TTFT), prefill throughput (tok/s), and generation throughput (tok/s).
+- **Comparative Throughput Graph & Metrics (`BenchmarkComparison`)**: Side-by-side comparison in `ClusterView` showing Local Master Execution vs LAN Distributed Execution, speedup percentage, prompt prefill factor, and memory offloaded (MB/%).
+- **Zero Mobile Plugin Dependencies**: Pure Dart timing with monotonic `Stopwatch`, socket latency measurement, and GetX observables.
 </Step>
 
 <Step>
-### Step 14: Local OpenAI Server Gateway & External Developer Tools Integration [PLANNED]
+### Step 14: Local OpenAI Server Gateway & External Developer Tools Integration [COMPLETED]
 
 Expose the distributed cluster to external AI tooling over the local network:
 
-- **Cluster-Aware API Gateway**: Wire `OpenAiServerService` (`/v1/chat/completions`, `/v1/models`) to proxy seamlessly through the active distributed cluster pipeline.
-- **1-Click Developer Integration**: Interactive drawer with copy-paste connection snippets for Cursor, Open WebUI, Obsidian, and Continue (`baseURL: http://<lan-ip>:8080/v1` + API bearer token).
-- **Network Discovery**: Broadcast API service metadata over LAN for instant zero-config client discovery.
+- **Cluster-Aware API Gateway (`OpenAiServerService`)**: Transparent OpenAI-compatible `/v1/chat/completions` and `/v1/models` HTTP gateway.
+- **Developer Integration Drawer (`OpenAiClientPresetsSheet`)**: Interactive presets drawer with 1-click configuration, API key masking, and setup guides for Cursor, Continue.dev, Open WebUI, Obsidian, and cURL / Python SDK.
+- **Network Switcher**: Instant switching between `127.0.0.1` and LAN IPv4 broadcast for cross-device desktop and mobile client connectivity.
 </Step>
 
 <Step>

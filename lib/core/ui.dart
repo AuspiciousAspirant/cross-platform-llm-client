@@ -88,12 +88,16 @@ class AppTokens {
   TextStyle get caption =>
       GoogleFonts.inter(fontSize: 13, height: 1.35, color: muted);
   TextStyle get small => GoogleFonts.inter(fontSize: 12, color: muted);
+  TextStyle get micro => GoogleFonts.inter(fontSize: 10.5, letterSpacing: 0.1, color: muted);
   TextStyle get label => GoogleFonts.inter(
       fontSize: 13,
       fontWeight: FontWeight.w600,
       letterSpacing: -0.08,
       color: muted);
   TextStyle get mono => GoogleFonts.firaCode(fontSize: 12.5, color: text);
+
+  Color get cardBg => surface;
+  Color get divider => hairline;
 }
 
 // ── Page chrome ─────────────────────────────────────────────────────────

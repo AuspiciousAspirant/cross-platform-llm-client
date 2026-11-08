@@ -5,6 +5,8 @@ import 'package:privatelm/services/cluster_service.dart';
 import 'package:privatelm/services/desktop_inference_engine.dart';
 import 'package:privatelm/services/desktop_rpc_worker.dart';
 import 'package:privatelm/services/desktop_engine_manager.dart';
+import 'package:privatelm/services/cluster_benchmark_service.dart';
+import 'package:privatelm/widgets/openai_client_presets_sheet.dart';
 import 'package:privatelm/utils/gallery_saver.dart';
 
 void main() {
@@ -285,6 +287,84 @@ void main() {
       expect(workflow, contains('flutter build windows --release'));
       expect(workflow, contains('PrivateLM-Windows-x64.zip'));
       expect(workflow, contains('actions/upload-artifact@v4'));
+    });
+  });
+
+  group('Cluster Benchmark & Throughput Comparison Tests', () {
+    test('BenchmarkResult correctly formats throughput and latency metrics', () {
+      final now = DateTime.now();
+      final result = BenchmarkResult(
+        isCluster: true,
+        promptTokens: 64,
+        evalTokens: 32,
+        ttftMs: 142.5,
+        promptTokensPerSecond: 280.0,
+        evalTokensPerSecond: 24.5,
+        networkOverheadMs: 4.2,
+        timestamp: now,
+        totalTimeMs: 1450.0,
+        modelName: 'qwen2.5-coder-7b.Q4_K_M.gguf',
+      );
+
+      expect(result.isCluster, isTrue);
+      expect(result.evalTpsFormatted, '24.50 tps');
+      expect(result.promptTpsFormatted, '280.00 tps');
+      expect(result.ttftFormatted, '142.5 ms');
+      expect(result.networkOverheadFormatted, '4.2 ms');
+
+      final map = result.toMap();
+      final restored = BenchmarkResult.fromMap(map);
+      expect(restored.isCluster, isTrue);
+      expect(restored.promptTokens, 64);
+      expect(restored.evalTokens, 32);
+      expect(restored.evalTokensPerSecond, 24.5);
+      expect(restored.modelName, 'qwen2.5-coder-7b.Q4_K_M.gguf');
+    });
+
+    test('BenchmarkComparison calculates speedup and memory offloading', () {
+      final now = DateTime.now();
+      final local = BenchmarkResult(
+        isCluster: false,
+        promptTokens: 64,
+        evalTokens: 32,
+        ttftMs: 120.0,
+        promptTokensPerSecond: 200.0,
+        evalTokensPerSecond: 16.0,
+        networkOverheadMs: 0.0,
+        timestamp: now,
+      );
+
+      final cluster = BenchmarkResult(
+        isCluster: true,
+        promptTokens: 64,
+        evalTokens: 32,
+        ttftMs: 160.0,
+        promptTokensPerSecond: 320.0,
+        evalTokensPerSecond: 24.0,
+        networkOverheadMs: 5.5,
+        timestamp: now,
+      );
+
+      final comp = BenchmarkComparison(
+        localResult: local,
+        clusterResult: cluster,
+        masterMemoryMb: 2048.0,
+        offloadedMemoryMb: 4096.0,
+        timestamp: now,
+      );
+
+      expect(comp.hasBoth, isTrue);
+      expect(comp.isClusterFaster, isTrue);
+      // Speedup: ((24 - 16) / 16) * 100 = 50.0%
+      expect(comp.speedupPercentage, closeTo(50.0, 0.01));
+      expect(comp.speedupFactor, closeTo(1.5, 0.01));
+      expect(comp.speedupFormatted, '+50.0%');
+      // Prompt speedup: ((320 - 200) / 200) * 100 = 60.0%
+      expect(comp.promptSpeedupPercentage, closeTo(60.0, 0.01));
+      expect(comp.ttftDeltaMs, closeTo(40.0, 0.01));
+      // Memory: 4096 / (2048 + 4096) = 66.67%
+      expect(comp.memorySavingsMb, 4096.0);
+      expect(comp.memorySavingsPercentage, closeTo(66.67, 0.1));
     });
   });
 }

@@ -1279,7 +1279,7 @@ class ModelController extends GetxController {
     }
 
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['gguf', 'litertlm', 'safetensors'],
         allowMultiple: false,
@@ -1345,7 +1345,7 @@ class ModelController extends GetxController {
 
     try {
       final folder =
-          directoryPath ?? await FilePicker.platform.getDirectoryPath();
+          directoryPath ?? await FilePicker.getDirectoryPath();
       if (folder == null || folder.isEmpty) return;
 
       final dir = Directory(folder);

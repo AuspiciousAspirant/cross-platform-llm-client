@@ -35,7 +35,7 @@ class _AmbientWorkerViewState extends State<AmbientWorkerView> {
     }
   }
 
-  String _formatGb(double? mb) {
+  String _formatGb(num? mb) {
     if (mb == null || mb <= 0) return '0.0 GB';
     return '${(mb / 1024).toStringAsFixed(1)} GB';
   }

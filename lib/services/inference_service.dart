@@ -57,6 +57,9 @@ class InferenceService extends GetxService {
   /// The loaded GGUF model has a working vision projector (images allowed).
   bool get ggufVisionLoaded => _engine?.ggufVisionLoaded ?? false;
 
+  /// The active platform inference engine.
+  platform.InferenceEngine? get activeEngine => _engine;
+
   Future<String> loadModel(
     String modelPath, {
     String? modelName,

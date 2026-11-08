@@ -58,6 +58,8 @@ class InferenceEngine {
   // GGUF model loaded together with a working vision projector.
   bool _ggufVisionLoaded = false;
   bool get ggufVisionLoaded => _desktopEngine?.ggufVisionLoaded ?? _ggufVisionLoaded;
+  DesktopInferenceEngine? get desktopEngine => _desktopEngine;
+  bool get isModelLoaded => _hasLoadedModel || (_desktopEngine?.isModelLoaded ?? false);
   bool _disposed = false;
   bool _hasLoadedModel = false;
   String? _liteConversationSystemPrompt;

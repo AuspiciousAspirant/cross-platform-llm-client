@@ -27,6 +27,8 @@ class LoadResult {
 
 class InferenceEngine {
   bool get ggufVisionLoaded => false;
+  dynamic get desktopEngine => null;
+  bool get isModelLoaded => false;
 
   Future<LoadResult> loadModel({
     required String modelPath,

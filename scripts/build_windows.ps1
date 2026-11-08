@@ -76,6 +76,22 @@ if (-not $SkipTests) {
 
 # 4. Build release executable
 Write-Host "`n[3/4] Compiling native Windows Release binary (privatelm.exe)..." -ForegroundColor Cyan
+
+# Pre-populate ephemeral engine assets if needed
+$flutterBinDir = Split-Path -Parent (Resolve-Path $flutterBin)
+$engineArtifacts = Join-Path $flutterBinDir "cache\artifacts\engine\windows-x64"
+$ephemeralDir = "$projectRoot\windows\flutter\ephemeral"
+if (Test-Path $engineArtifacts) {
+    if (-not (Test-Path "$ephemeralDir\cpp_client_wrapper")) {
+        Copy-Item -Path "$engineArtifacts\cpp_client_wrapper" -Destination "$ephemeralDir\cpp_client_wrapper" -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    foreach ($f in @("flutter_windows.dll", "flutter_windows.dll.lib", "icudtl.dat")) {
+        if (-not (Test-Path "$ephemeralDir\$f")) {
+            Copy-Item -Path "$engineArtifacts\$f" -Destination "$ephemeralDir\$f" -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 & $flutterBin build windows --release
 
 $buildOutput = "$projectRoot\build\windows\x64\runner\Release"
@@ -121,6 +137,15 @@ Documentation & Roadmap:
   live cluster RAM and layer calculator, and milestone tracker.
 "@
 $readmeContent | Out-File -FilePath "$distDir\README.txt" -Encoding utf8
+
+# Create standalone zip archive
+$zipPath = "$projectRoot\dist\PrivateLM-Windows-x64.zip"
+if (Test-Path $zipPath) {
+    Remove-Item -Path $zipPath -Force
+}
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory($distDir, $zipPath)
+Write-Host "-> Created standalone ZIP archive: $zipPath" -ForegroundColor Green
 
 Write-Host "`n====================================================" -ForegroundColor Green
 Write-Host "  SUCCESS: Native Windows Executable Built!         " -ForegroundColor Green

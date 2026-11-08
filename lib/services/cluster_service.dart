@@ -13,6 +13,7 @@ import '../core/constants.dart';
 import '../core/ui.dart';
 import '../controllers/model_controller.dart';
 import 'app_log_service.dart';
+import 'cluster_benchmark_service.dart';
 import 'desktop_inference_engine.dart';
 import 'desktop_rpc_worker.dart';
 import 'hive_service.dart';
@@ -127,6 +128,25 @@ class ClusterService extends GetxService {
   final LanClusterDiscovery _lanDiscovery = LanClusterDiscovery();
   LanClusterDiscovery get lanDiscovery => _lanDiscovery;
 
+  /// Distributed inference benchmark service for evaluating throughput and speedup.
+  ClusterBenchmarkService get benchmark => Get.isRegistered<ClusterBenchmarkService>()
+      ? Get.find<ClusterBenchmarkService>()
+      : Get.put(ClusterBenchmarkService(), permanent: true);
+
+  /// Latest paired comparison between local and cluster inference benchmarks.
+  Rx<BenchmarkComparison?> get latestBenchmarkComparison => benchmark.latestComparison;
+
+  /// Runs the standardized 64-token synthetic inference benchmark.
+  Future<BenchmarkResult?> runBenchmark({
+    bool? isCluster,
+    int targetTokens = ClusterBenchmarkService.standardizedTargetTokens,
+  }) async {
+    return benchmark.runBenchmark(
+      isCluster: isCluster ?? (enabled.value && workers.isNotEmpty),
+      targetTokens: targetTokens,
+    );
+  }
+
   static bool get isDesktop =>
       !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
@@ -205,6 +225,9 @@ class ClusterService extends GetxService {
     final saved = _hive.getSetting<List>(AppConstants.keyClusterWorkers) ?? const [];
     workers.assignAll(saved.whereType<Map>().map(ClusterWorker.fromMap));
     if (isSupported) {
+      if (!Get.isRegistered<ClusterBenchmarkService>()) {
+        Get.put(ClusterBenchmarkService(), permanent: true);
+      }
       final infoPlugin = DeviceInfoPlugin();
       if (Platform.isIOS) {
         infoPlugin.iosInfo.then((info) => deviceName = info.modelName);
@@ -904,9 +927,13 @@ class ClusterService extends GetxService {
     });
   }
 
-  void clearSplit() {
+  void _stopMasterKeepalive() {
     _keepaliveTimer?.cancel();
     _keepaliveTimer = null;
+  }
+
+  void clearSplit() {
+    _stopMasterKeepalive();
     split.clear();
     workerPings.clear();
     droppedWorkers.clear();
@@ -971,7 +998,7 @@ class ClusterService extends GetxService {
         final loadedModel = inf.loadedModelName.value;
         if (loadedModel.isNotEmpty && Get.isRegistered<ModelController>()) {
           final modelCtrl = Get.find<ModelController>();
-          final path = modelCtrl.modelPath(loadedModel);
+          final path = await modelCtrl.modelPath(loadedModel);
           if (path.isNotEmpty) {
             await inf.loadModel(path, modelName: loadedModel);
           }

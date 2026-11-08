@@ -468,7 +468,7 @@ class DesktopRpcWorker {
       if (success) {
         state = 'stopped';
         error = null;
-        _resolvedBinaryPath = await findRpcBinary();
+        _resolvedBinaryPath = await findRpcServerBinary();
       }
       return success;
     } catch (e) {

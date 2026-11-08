@@ -17,6 +17,7 @@ import '../services/cluster_service.dart';
 import 'cluster_view.dart';
 import 'log_view.dart';
 import '../core/haptics.dart';
+import '../widgets/openai_client_presets_sheet.dart';
 
 const _tabular = [FontFeature.tabularFigures()];
 
@@ -143,6 +144,19 @@ class SettingsView extends GetView<SettingsController> {
                   chevron: true,
                   onTap: () => Get.to(() => const ClusterView()),
                 ),
+            ]),
+            const SectionHeader('Developer & Integrations'),
+            AppGroup(dividerIndent: 60, children: [
+              AppRow(
+                icon: Icons.integration_instructions_outlined,
+                title: 'OpenAI API Client Presets',
+                subtitle: 'Cursor, Open WebUI, Obsidian, Continue.dev configs',
+                chevron: true,
+                onTap: () {
+                  Haptics.lightImpact();
+                  showOpenAiClientPresetsSheet(context);
+                },
+              ),
             ]),
             const SectionHeader('About'),
             AppGroup(dividerIndent: 60, children: [

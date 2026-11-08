@@ -10,8 +10,10 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../core/ui.dart';
+import '../services/cluster_benchmark_service.dart';
 import '../services/cluster_service.dart';
 import '../services/desktop_rpc_worker.dart';
+import '../services/inference_service.dart';
 import '../widgets/unified_engine_setup_card.dart';
 import 'ambient_worker_view.dart';
 
@@ -344,6 +346,8 @@ class _ClusterViewState extends State<ClusterView> {
         _SplitCard(shares: cluster.split),
         const SizedBox(height: 16),
       ],
+      _buildBenchmarkCard(context),
+      const SizedBox(height: 16),
       PrimaryButton(
         label: ClusterService.isDesktop
             ? 'Add worker by IP'
@@ -593,6 +597,223 @@ class _ClusterViewState extends State<ClusterView> {
         ],
       ),
     ]);
+  }
+
+  Widget _buildBenchmarkCard(BuildContext context) {
+    final t = AppTokens.of(context);
+    final benchmark = cluster.benchmark;
+
+    return Obx(() {
+      final isBench = benchmark.isBenchmarking.value;
+      final comparison = benchmark.latestComparison.value;
+      final local = benchmark.latestLocalResult.value;
+      final remote = benchmark.latestClusterResult.value;
+
+      return AppCard(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.bolt_rounded, color: t.accent, size: 20),
+                const SizedBox(width: 8),
+                Text('Cluster Throughput Benchmark', style: t.bodyStrong),
+                const Spacer(),
+                if (isBench)
+                  PillButton(
+                    label: 'Cancel',
+                    icon: Icons.stop_rounded,
+                    onPressed: benchmark.cancelBenchmark,
+                  )
+                else
+                  PillButton(
+                    label: comparison != null || remote != null || local != null
+                        ? 'Re-test'
+                        : 'Benchmark',
+                    icon: Icons.play_arrow_rounded,
+                    primary: true,
+                    onPressed: () => _runThroughputBenchmark(context),
+                  ),
+              ],
+            ),
+            if (isBench) ...[
+              const SizedBox(height: 14),
+              AppProgressBar(value: benchmark.currentProgress.value, height: 4),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      benchmark.statusMessage.value,
+                      style: t.caption,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (benchmark.currentTps.value > 0) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      '${benchmark.currentTps.value.toStringAsFixed(1)} tps',
+                      style: t.bodyStrong.copyWith(color: t.accent),
+                    ),
+                  ],
+                ],
+              ),
+            ] else if (comparison != null && comparison.hasBoth) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: (comparison.isClusterFaster ? t.green : t.orange)
+                      .withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: (comparison.isClusterFaster ? t.green : t.orange)
+                        .withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      comparison.isClusterFaster
+                          ? Icons.trending_up_rounded
+                          : Icons.trending_down_rounded,
+                      size: 18,
+                      color: comparison.isClusterFaster ? t.green : t.orange,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${comparison.speedupFormatted} Speedup',
+                      style: t.bodyStrong.copyWith(
+                        color: comparison.isClusterFaster ? t.green : t.orange,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (comparison.memorySavingsMb != null &&
+                        comparison.memorySavingsMb! > 0)
+                      Text(
+                        '${comparison.memorySavingsFormatted} RAM Saved',
+                        style: t.small.copyWith(color: t.text),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _BenchmarkMetricTile(
+                      title: 'Local Engine',
+                      tps: comparison.localResult!.evalTokensPerSecond,
+                      ttftMs: comparison.localResult!.ttftMs,
+                      prefillTps: comparison.localResult!.promptTokensPerSecond,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _BenchmarkMetricTile(
+                      title: 'LAN Cluster',
+                      tps: comparison.clusterResult!.evalTokensPerSecond,
+                      ttftMs: comparison.clusterResult!.ttftMs,
+                      prefillTps: comparison.clusterResult!.promptTokensPerSecond,
+                      isAccent: true,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Network overhead: ${comparison.clusterResult!.networkOverheadMs.toStringAsFixed(1)} ms',
+                    style: t.small,
+                  ),
+                  InkWell(
+                    onTap: benchmark.clearBenchmark,
+                    borderRadius: BorderRadius.circular(4),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      child: Text('Reset', style: t.small.copyWith(color: t.muted)),
+                    ),
+                  ),
+                ],
+              ),
+            ] else if (remote != null || local != null) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Text(
+                    (remote ?? local!).isCluster ? 'Cluster Mode' : 'Local Mode',
+                    style: t.bodyStrong,
+                  ),
+                  const Spacer(),
+                  AppTag(
+                    '${(remote ?? local!).evalTokensPerSecond.toStringAsFixed(1)} tps',
+                    color: t.accent,
+                    icon: Icons.speed_rounded,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'TTFT: ${(remote ?? local!).ttftMs.toStringAsFixed(0)} ms · Prefill: ${(remote ?? local!).promptTokensPerSecond.toStringAsFixed(0)} tps · Overhead: ${(remote ?? local!).networkOverheadMs.toStringAsFixed(1)} ms',
+                style: t.caption,
+              ),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    (remote ?? local!).isCluster
+                        ? 'Tip: Test in local mode (Cluster Off) to compare speedup.'
+                        : 'Tip: Test with Cluster Master active to compare speedup.',
+                    style: t.small,
+                  ),
+                  InkWell(
+                    onTap: benchmark.clearBenchmark,
+                    child: Text('Reset', style: t.small.copyWith(color: t.muted)),
+                  ),
+                ],
+              ),
+            ] else ...[
+              const SizedBox(height: 8),
+              Text(
+                'Run a standardized 64-token synthetic inference test to measure Time-to-First-Token (TTFT), generation tokens/sec, and distributed cluster speedup.',
+                style: t.caption,
+              ),
+            ],
+          ],
+        ),
+      );
+    });
+  }
+
+  Future<void> _runThroughputBenchmark(BuildContext context) async {
+    final inf = Get.isRegistered<InferenceService>()
+        ? Get.find<InferenceService>()
+        : null;
+    if (inf == null || (!inf.isModelLoaded.value && inf.activeEngine == null)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Load a model from the Models tab first to benchmark.'),
+          ),
+        );
+      }
+      return;
+    }
+
+    try {
+      await cluster.benchmark.runBenchmark();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Benchmark error: $e')),
+        );
+      }
+    }
   }
 
   Widget _buildDiagnosticsSection(BuildContext context) {
@@ -1279,6 +1500,52 @@ class _QrScanPageState extends State<_QrScanPage> {
           ),
         ),
       ]),
+    );
+  }
+}
+
+class _BenchmarkMetricTile extends StatelessWidget {
+  final String title;
+  final double tps;
+  final double ttftMs;
+  final double prefillTps;
+  final bool isAccent;
+
+  const _BenchmarkMetricTile({
+    required this.title,
+    required this.tps,
+    required this.ttftMs,
+    required this.prefillTps,
+    this.isAccent = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = AppTokens.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: t.fill,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isAccent ? t.accent.withValues(alpha: 0.3) : t.hairline,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: t.small.copyWith(color: isAccent ? t.accent : t.muted)),
+          const SizedBox(height: 4),
+          Text(
+            '${tps.toStringAsFixed(1)} tps',
+            style: t.bodyStrong.copyWith(fontSize: 16),
+          ),
+          const SizedBox(height: 4),
+          Text('TTFT: ${ttftMs.toStringAsFixed(0)} ms', style: t.small),
+          Text('Prefill: ${prefillTps.toStringAsFixed(0)} tps', style: t.small),
+        ],
+      ),
     );
   }
 }

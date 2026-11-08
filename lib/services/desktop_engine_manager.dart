@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-enum GpuVendor { nvidia, amd, intel, apple, generic }
+enum GpuVendor { nvidia, amd, intel, apple, generic, cpu }
 
 enum EngineBackendFlavor {
   vulkan,

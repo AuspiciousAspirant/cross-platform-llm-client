@@ -18,6 +18,10 @@ class OpenAiServerService {
   void Function(String)? _onLog;
 
   bool get isRunning => _server != null;
+  int? get port => _server?.port;
+  String? get apiKey => _apiKey;
+  String? get host => _lastReachableAddress;
+
   String? get localUrl {
     final port = _server?.port;
     if (port == null) return null;
@@ -26,6 +30,22 @@ class OpenAiServerService {
   }
 
   String? _lastReachableAddress;
+
+  /// Discovers a reachable IPv4 address on the local network (non-loopback).
+  static Future<String?> getReachableIpv4Address() async {
+    try {
+      final interfaces = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLoopback: false,
+      );
+      for (final interface in interfaces) {
+        for (final address in interface.addresses) {
+          if (!address.isLoopback) return address.address;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
 
   static const int maxBodyBytes = 18 * 1024 * 1024;
   static const int maxDecodedAttachmentBytes = 12 * 1024 * 1024;
@@ -675,20 +695,7 @@ class OpenAiServerService {
     );
   }
 
-  Future<String?> _reachableIpv4Address() async {
-    try {
-      final interfaces = await NetworkInterface.list(
-        type: InternetAddressType.IPv4,
-        includeLoopback: false,
-      );
-      for (final interface in interfaces) {
-        for (final address in interface.addresses) {
-          if (!address.isLoopback) return address.address;
-        }
-      }
-    } catch (_) {}
-    return null;
-  }
+  Future<String?> _reachableIpv4Address() => getReachableIpv4Address();
 
   String _id() {
     final rng = Random.secure();

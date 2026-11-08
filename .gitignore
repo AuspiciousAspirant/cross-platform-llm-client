@@ -102,3 +102,8 @@ bin/*.zip
 
 # Ephemeral agent playwright logs
 .agents/plugins/**/.playwright-mcp/
+
+# Local tools & distribution packages
+tools/
+dist/
+.dart_temp/
