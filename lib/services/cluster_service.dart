@@ -200,6 +200,7 @@ class ClusterService extends GetxService {
 
   Timer? _keepaliveTimer;
   final Map<String, int> _workerFailCounts = {};
+  final Map<String, DateTime> _workerLastSeen = {};
 
   String deviceName = '';
   double? _localSpeed;
@@ -562,7 +563,17 @@ class ClusterService extends GetxService {
     _lanDiscovery.startListening(
       selfWorkerId: worker.value.id,
       onWorkerDiscovered: (discovered) {
-        if (isAdded(discovered)) return;
+        final now = DateTime.now();
+        _workerLastSeen[discovered.endpoint] = now;
+        final hostOnly = discovered.endpoint.split(':').first;
+        _workerLastSeen[hostOnly] = now;
+
+        if (isAdded(discovered)) {
+          _workerFailCounts[discovered.endpoint] = 0;
+          _workerFailCounts[hostOnly] = 0;
+          return;
+        }
+
         final existingIdx = found.indexWhere(
           (w) =>
               w.endpoint == discovered.endpoint ||
@@ -857,7 +868,7 @@ class ClusterService extends GetxService {
 
   /// Tests TCP connection to a worker endpoint and measures round-trip time.
   Future<int?> pingWorker(String host, int port,
-      {Duration timeout = const Duration(milliseconds: 1200)}) async {
+      {Duration timeout = const Duration(milliseconds: 2500)}) async {
     final sw = Stopwatch()..start();
     try {
       final socket = await Socket.connect(host, port, timeout: timeout);
@@ -871,7 +882,7 @@ class ClusterService extends GetxService {
 
   void _startMasterKeepalive() {
     _keepaliveTimer?.cancel();
-    _keepaliveTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+    _keepaliveTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
       if (role != ClusterRole.master || split.isEmpty) {
         _keepaliveTimer?.cancel();
         _keepaliveTimer = null;
@@ -888,6 +899,8 @@ class ClusterService extends GetxService {
 
       final pings = <int>[];
       final newlyDropped = <String>[];
+      final isModelLoaded = Get.isRegistered<InferenceService>() &&
+          Get.find<InferenceService>().isModelLoaded.value;
 
       for (var i = 0; i < split.length; i++) {
         final share = split[i];
@@ -899,19 +912,54 @@ class ClusterService extends GetxService {
             ? int.tryParse(parts[1]) ?? LlamaCluster.defaultPort
             : LlamaCluster.defaultPort;
 
-        final ms = await pingWorker(host, port);
+        final lastSeen = _workerLastSeen[share.endpoint] ?? _workerLastSeen[host];
+        // If a UDP beacon arrived within the last 15 seconds, the worker is actively running
+        final hasRecentBeacon = lastSeen != null &&
+            DateTime.now().difference(lastSeen).inSeconds < 15;
+
+        // When a model is loaded, llama-server has a live dedicated RPC connection on port 50052.
+        // Connecting to port 50052 concurrently can collide with llama-server or time out because
+        // ggml-rpc-server is single-connection. Trust the UDP broadcast heartbeat on port 50053!
+        if (isModelLoaded && hasRecentBeacon) {
+          _workerFailCounts[share.endpoint] = 0;
+          _workerFailCounts[host] = 0;
+          final estPing = share.pingMs ?? 2;
+          pings.add(estPing);
+          if (!share.isHealthy) {
+            split[i] = share.copyWith(isHealthy: true, pingMs: estPing);
+          }
+          continue;
+        }
+
+        final ms = await pingWorker(host, port,
+            timeout: const Duration(milliseconds: 2500));
         workerPings[share.endpoint] = ms;
 
         if (ms != null) {
           _workerFailCounts[share.endpoint] = 0;
+          _workerFailCounts[host] = 0;
           pings.add(ms);
           if (!share.isHealthy || share.pingMs != ms) {
             split[i] = share.copyWith(isHealthy: true, pingMs: ms);
           }
         } else {
+          // If we recently received a UDP announcement, don't drop on transient TCP socket busy
+          if (hasRecentBeacon) {
+            _workerFailCounts[share.endpoint] = 0;
+            _workerFailCounts[host] = 0;
+            final estPing = share.pingMs ?? 2;
+            pings.add(estPing);
+            if (!share.isHealthy) {
+              split[i] = share.copyWith(isHealthy: true, pingMs: estPing);
+            }
+            continue;
+          }
+
           final fails = (_workerFailCounts[share.endpoint] ?? 0) + 1;
           _workerFailCounts[share.endpoint] = fails;
-          if (fails >= 2) {
+          _workerFailCounts[host] = fails;
+          // Require at least 4 consecutive missed heartbeats (16s of total silence) before declaring degraded
+          if (fails >= 4) {
             newlyDropped.add(share.endpoint);
             if (share.isHealthy) {
               split[i] = share.copyWith(isHealthy: false, pingMs: null);
@@ -956,6 +1004,8 @@ class ClusterService extends GetxService {
 
     final pings = <int>[];
     final newlyDropped = <String>[];
+    final isModelLoaded = Get.isRegistered<InferenceService>() &&
+        Get.find<InferenceService>().isModelLoaded.value;
 
     for (var i = 0; i < split.length; i++) {
       final share = split[i];
@@ -967,11 +1017,26 @@ class ClusterService extends GetxService {
           ? int.tryParse(parts[1]) ?? LlamaCluster.defaultPort
           : LlamaCluster.defaultPort;
 
-      final ms = await pingWorker(host, port);
+      final lastSeen = _workerLastSeen[share.endpoint] ?? _workerLastSeen[host];
+      final hasRecentBeacon = lastSeen != null &&
+          DateTime.now().difference(lastSeen).inSeconds < 15;
+
+      int? ms;
+      if (isModelLoaded && hasRecentBeacon) {
+        ms = share.pingMs ?? 2;
+      } else {
+        ms = await pingWorker(host, port,
+            timeout: const Duration(milliseconds: 2500));
+        if (ms == null && hasRecentBeacon) {
+          ms = share.pingMs ?? 2;
+        }
+      }
+
       workerPings[share.endpoint] = ms;
 
       if (ms != null) {
         _workerFailCounts[share.endpoint] = 0;
+        _workerFailCounts[host] = 0;
         pings.add(ms);
         split[i] = share.copyWith(isHealthy: true, pingMs: ms);
       } else {
