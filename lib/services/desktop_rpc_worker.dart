@@ -45,6 +45,10 @@ class DesktopRpcWorker {
   String? get currentPeer => peer;
   String? get binaryPath => _resolvedBinaryPath;
 
+  static List<String> get binaryCandidates => Platform.isWindows
+      ? const ['ggml-rpc-server.exe', 'rpc-server.exe', 'llama-rpc-server.exe']
+      : const ['ggml-rpc-server', 'rpc-server', 'llama-rpc-server'];
+
   static String get binaryName =>
       Platform.isWindows ? 'rpc-server.exe' : 'rpc-server';
 
@@ -67,86 +71,86 @@ class DesktopRpcWorker {
     }
   }
 
-  /// Searches for `rpc-server.exe` (or `rpc-server` on Linux/macOS) in:
-  /// 1) Alongside executable: `p.join(p.dirname(Platform.resolvedExecutable), 'rpc-server.exe')`
-  /// 2) In project root / local tools: `p.join(Directory.current.path, 'bin', 'rpc-server.exe')`
+  /// Searches for `ggml-rpc-server.exe` / `rpc-server.exe` (or `ggml-rpc-server` on Linux/macOS) in:
+  /// 1) Alongside executable: `p.join(p.dirname(Platform.resolvedExecutable), ...)`
+  /// 2) In project root / local tools: `p.join(Directory.current.path, 'bin', ...)`
   /// 3) In system PATH (via `where.exe` or `which`)
   /// 4) In application support tools directory
   Future<String?> findRpcServerBinary() async {
-    final bin = binaryName;
+    for (final bin in binaryCandidates) {
+      // 1) Alongside the executable:
+      try {
+        final exeDir = p.dirname(Platform.resolvedExecutable);
+        final c1 = p.join(exeDir, bin);
+        if (await File(c1).exists()) {
+          _resolvedBinaryPath = c1;
+          return c1;
+        }
+        final c1b = p.join(exeDir, 'bin', bin);
+        if (await File(c1b).exists()) {
+          _resolvedBinaryPath = c1b;
+          return c1b;
+        }
+      } catch (_) {}
 
-    // 1) Alongside the executable:
-    try {
-      final exeDir = p.dirname(Platform.resolvedExecutable);
-      final c1 = p.join(exeDir, bin);
-      if (await File(c1).exists()) {
-        _resolvedBinaryPath = c1;
-        return c1;
-      }
-      final c1b = p.join(exeDir, 'bin', bin);
-      if (await File(c1b).exists()) {
-        _resolvedBinaryPath = c1b;
-        return c1b;
-      }
-    } catch (_) {}
+      // 2) In project root / local tools:
+      try {
+        final c2 = p.join(Directory.current.path, 'bin', bin);
+        if (await File(c2).exists()) {
+          _resolvedBinaryPath = c2;
+          return c2;
+        }
+        final c2b = p.join(Directory.current.path, bin);
+        if (await File(c2b).exists()) {
+          _resolvedBinaryPath = c2b;
+          return c2b;
+        }
+      } catch (_) {}
 
-    // 2) In project root / local tools:
-    try {
-      final c2 = p.join(Directory.current.path, 'bin', bin);
-      if (await File(c2).exists()) {
-        _resolvedBinaryPath = c2;
-        return c2;
-      }
-      final c2b = p.join(Directory.current.path, bin);
-      if (await File(c2b).exists()) {
-        _resolvedBinaryPath = c2b;
-        return c2b;
-      }
-    } catch (_) {}
-
-    // 3) In system PATH:
-    try {
-      final cmd = Platform.isWindows ? 'where.exe' : 'which';
-      final res = await Process.run(cmd, [bin]);
-      if (res.exitCode == 0) {
-        final lines = (res.stdout as String)
-            .split(RegExp(r'\r?\n'))
-            .map((s) => s.trim())
-            .where((s) => s.isNotEmpty)
-            .toList();
-        for (final line in lines) {
-          if (await File(line).exists()) {
-            _resolvedBinaryPath = line;
-            return line;
+      // 3) In system PATH:
+      try {
+        final cmd = Platform.isWindows ? 'where.exe' : 'which';
+        final res = await Process.run(cmd, [bin]);
+        if (res.exitCode == 0) {
+          final lines = (res.stdout as String)
+              .split(RegExp(r'\r?\n'))
+              .map((s) => s.trim())
+              .where((s) => s.isNotEmpty)
+              .toList();
+          for (final line in lines) {
+            if (await File(line).exists()) {
+              _resolvedBinaryPath = line;
+              return line;
+            }
           }
         }
-      }
-    } catch (_) {}
+      } catch (_) {}
 
-    // 3b) Environment PATH scan fallback:
-    try {
-      final pathEnv = Platform.environment['PATH'] ?? '';
-      final sep = Platform.isWindows ? ';' : ':';
-      for (final dir in pathEnv.split(sep)) {
-        final d = dir.trim();
-        if (d.isEmpty) continue;
-        final candidate = p.join(d, bin);
-        if (await File(candidate).exists()) {
-          _resolvedBinaryPath = candidate;
-          return candidate;
+      // 3b) Environment PATH scan fallback:
+      try {
+        final pathEnv = Platform.environment['PATH'] ?? '';
+        final sep = Platform.isWindows ? ';' : ':';
+        for (final dir in pathEnv.split(sep)) {
+          final d = dir.trim();
+          if (d.isEmpty) continue;
+          final candidate = p.join(d, bin);
+          if (await File(candidate).exists()) {
+            _resolvedBinaryPath = candidate;
+            return candidate;
+          }
         }
-      }
-    } catch (_) {}
+      } catch (_) {}
 
-    // 4) Application support bin folder:
-    try {
-      final appSupport = await getApplicationSupportDirectory();
-      final c4 = p.join(appSupport.path, 'bin', bin);
-      if (await File(c4).exists()) {
-        _resolvedBinaryPath = c4;
-        return c4;
-      }
-    } catch (_) {}
+      // 4) Application support bin folder:
+      try {
+        final appSupport = await getApplicationSupportDirectory();
+        final c4 = p.join(appSupport.path, 'bin', bin);
+        if (await File(c4).exists()) {
+          _resolvedBinaryPath = c4;
+          return c4;
+        }
+      } catch (_) {}
+    }
 
     _resolvedBinaryPath = null;
     return null;
@@ -159,7 +163,7 @@ class DesktopRpcWorker {
     if (binary == null) {
       state = 'error';
       error =
-          'rpc-server binary not found. Please place $binaryName in the bin/ directory.';
+          'RPC worker binary not found. Please place $binaryName in the bin/ directory.';
       throw Exception(error);
     }
 

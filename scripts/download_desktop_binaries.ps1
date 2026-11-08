@@ -1,29 +1,51 @@
-﻿<#
+<#
 .SYNOPSIS
-    Downloads and extracts pre-built llama.cpp binaries (llama-server.exe & rpc-server.exe)
+    Downloads and extracts official llama.cpp binaries (llama-server.exe & ggml-rpc-server.exe)
     for PrivateLM on Windows.
 #>
 
+[CmdletBinding()]
+param(
+    [string]$TargetDir = ""
+)
+
 $ErrorActionPreference = "Stop"
 
-$binDir = Join-Path $PSScriptRoot "..\bin"
+if (-not [string]::IsNullOrWhiteSpace($TargetDir)) {
+    $binDir = $TargetDir
+} elseif (Test-Path "bin") {
+    $binDir = (Resolve-Path "bin").Path
+} else {
+    $binDir = Join-Path $PSScriptRoot "..\bin"
+}
+
 if (-not (Test-Path $binDir)) {
     New-Item -ItemType Directory -Path $binDir -Force | Out-Null
 }
 
+Write-Host "====================================================" -ForegroundColor Cyan
+Write-Host "  PrivateLM: Automated Engine & RPC Installer       " -ForegroundColor Cyan
+Write-Host "====================================================" -ForegroundColor Cyan
+Write-Host "Target Directory: $binDir" -ForegroundColor White
 Write-Host "Checking latest llama.cpp release from GitHub..." -ForegroundColor Cyan
 
-$apiUrl = "https://api.github.com/repos/ggerganov/llama.cpp/releases/latest"
+$apiUrls = @(
+    "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest",
+    "https://api.github.com/repos/ggerganov/llama.cpp/releases/latest"
+)
 $headers = @{
     "User-Agent" = "PrivateLM-LLM-Client"
     "Accept"     = "application/vnd.github.v3+json"
 }
 
-try {
-    $release = Invoke-RestMethod -Uri $apiUrl -Headers $headers -TimeoutSec 15
-} catch {
-    Write-Warning "Could not query GitHub API directly: $_"
-    exit 1
+$release = $null
+foreach ($url in $apiUrls) {
+    try {
+        $release = Invoke-RestMethod -Uri $url -Headers $headers -TimeoutSec 15
+        if ($release) { break }
+    } catch {
+        Write-Warning "Could not reach $url : $_"
+    }
 }
 
 $vulkanAsset = $release.assets | Where-Object { $_.name -like "*bin-win-vulkan-x64.zip" } | Select-Object -First 1

@@ -84,6 +84,10 @@ class DesktopEngineManager {
   static String get masterBinaryName =>
       Platform.isWindows ? 'llama-server.exe' : 'llama-server';
 
+  static List<String> get workerBinaryCandidates => Platform.isWindows
+      ? const ['ggml-rpc-server.exe', 'rpc-server.exe', 'llama-rpc-server.exe']
+      : const ['ggml-rpc-server', 'rpc-server', 'llama-rpc-server'];
+
   static String get workerBinaryName =>
       Platform.isWindows ? 'rpc-server.exe' : 'rpc-server';
 
@@ -305,7 +309,6 @@ class DesktopEngineManager {
   static Future<EngineBinaryStatus> checkBinaryStatus() async {
     final binDir = await getPreferredBinDir();
     final masterBin = masterBinaryName;
-    final workerBin = workerBinaryName;
 
     String? foundMaster;
     String? foundWorker;
@@ -328,8 +331,13 @@ class DesktopEngineManager {
         if (m.existsSync() && isCompleteBinary(m.path)) foundMaster = m.path;
       }
       if (foundWorker == null) {
-        final w = File(p.join(dir, workerBin));
-        if (w.existsSync() && isCompleteBinary(w.path)) foundWorker = w.path;
+        for (final wb in workerBinaryCandidates) {
+          final w = File(p.join(dir, wb));
+          if (w.existsSync() && isCompleteBinary(w.path)) {
+            foundWorker = w.path;
+            break;
+          }
+        }
       }
       if (foundMaster != null && foundWorker != null) break;
     }
@@ -485,7 +493,8 @@ class DesktopEngineManager {
       if (!await dir.exists()) await dir.create(recursive: true);
 
       final masterBin = masterBinaryName.toLowerCase();
-      final workerBin = workerBinaryName.toLowerCase();
+      final workerCandidatesLower =
+          workerBinaryCandidates.map((c) => c.toLowerCase()).toSet();
       bool foundMaster = false;
       bool foundWorker = false;
 
@@ -495,7 +504,7 @@ class DesktopEngineManager {
         final baseLower = base.toLowerCase();
 
         final isTarget = baseLower == masterBin ||
-            baseLower == workerBin ||
+            workerCandidatesLower.contains(baseLower) ||
             baseLower == 'llama-cli.exe' ||
             baseLower == 'llama-cli';
 
@@ -513,7 +522,7 @@ class DesktopEngineManager {
               await Process.run('chmod', ['+x', outFile.path]);
             }
           }
-          if (baseLower == workerBin) {
+          if (workerCandidatesLower.contains(baseLower)) {
             foundWorker = true;
             if (!Platform.isWindows) {
               await Process.run('chmod', ['+x', outFile.path]);
@@ -526,13 +535,83 @@ class DesktopEngineManager {
         onProgress?.call(1.0, 'Installation complete! Binaries ready in bin/');
         return true;
       } else {
-        throw Exception('Archive did not contain $masterBin or $workerBin');
+        throw Exception('Archive did not contain $masterBin or RPC worker binary');
       }
     } catch (e) {
       debugPrint('[DesktopEngineManager] Download/install failed: $e');
       rethrow;
     } finally {
       client.close();
+    }
+  }
+
+  /// Launches an external visible PowerShell terminal window executing the automated
+  /// installation script so the user can observe download and extraction progress in CMD/PowerShell.
+  static Future<bool> launchTerminalInstaller({String? targetDir}) async {
+    if (!Platform.isWindows) return false;
+    try {
+      final bin = targetDir ?? await getPreferredBinDir();
+      final candidateScripts = [
+        p.join(Directory.current.path, 'scripts', 'download_desktop_binaries.ps1'),
+        p.join(p.dirname(Platform.resolvedExecutable), 'scripts', 'download_desktop_binaries.ps1'),
+        p.join(p.dirname(Platform.resolvedExecutable), 'download_desktop_binaries.ps1'),
+      ];
+      String? scriptPath;
+      for (final s in candidateScripts) {
+        if (File(s).existsSync()) {
+          scriptPath = s;
+          break;
+        }
+      }
+
+      if (scriptPath != null) {
+        await Process.start('powershell.exe', [
+          '-NoExit',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-File',
+          scriptPath,
+          '-TargetDir',
+          bin,
+        ], runInShell: true);
+        return true;
+      }
+
+      // Inline PowerShell command if script file is missing
+      final psCmd = '''
+Write-Host "====================================================" -ForegroundColor Cyan
+Write-Host "  PrivateLM: Automated RPC Worker Installation      " -ForegroundColor Cyan
+Write-Host "====================================================" -ForegroundColor Cyan
+\$bin = "$bin"
+New-Item -ItemType Directory -Path \$bin -Force | Out-Null
+Write-Host "Querying latest llama.cpp release..." -ForegroundColor Green
+try {
+    \$release = Invoke-RestMethod -Uri "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest" -Headers @{"User-Agent"="PrivateLM"} -TimeoutSec 15
+    \$asset = \$release.assets | Where-Object { \$_.name -like "*bin-win-vulkan-x64.zip" } | Select-Object -First 1
+    if (-not \$asset) { \$asset = \$release.assets | Where-Object { \$_.name -like "*bin-win-avx2-x64.zip" } | Select-Object -First 1 }
+    \$zip = Join-Path \$bin \$asset.name
+    Write-Host "Downloading \$(\$asset.name)..." -ForegroundColor Green
+    Invoke-WebRequest -Uri \$asset.browser_download_url -OutFile \$zip
+    Write-Host "Extracting to \$bin..." -ForegroundColor Green
+    Expand-Archive -Path \$zip -DestinationPath \$bin -Force
+    Remove-Item \$zip -Force
+    Write-Host "`nSUCCESS: RPC worker and companion DLLs installed into \$bin" -ForegroundColor Green
+    Write-Host "You can close this window now." -ForegroundColor White
+} catch {
+    Write-Error "Failed to install automatically: \$_"
+}
+''';
+      await Process.start('powershell.exe', [
+        '-NoExit',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        psCmd,
+      ], runInShell: true);
+      return true;
+    } catch (e) {
+      debugPrint('[DesktopEngineManager] Failed to launch terminal installer: $e');
+      return false;
     }
   }
 }

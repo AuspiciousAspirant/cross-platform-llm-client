@@ -147,6 +147,14 @@ if (Test-Path "$projectRoot\bin") {
     Write-Host "-> Bundled local engine binaries into distribution bin/ directory." -ForegroundColor Green
 }
 
+# Bundle helper scripts if present
+if (Test-Path "$projectRoot\scripts") {
+    $targetScripts = "$distDir\scripts"
+    New-Item -ItemType Directory -Force -Path $targetScripts | Out-Null
+    Copy-Item -Path "$projectRoot\scripts\*" -Destination $targetScripts -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "-> Bundled helper scripts into distribution scripts/ directory." -ForegroundColor Green
+}
+
 # Add quick start readme
 $readmeContent = @"
 PrivateLM - Cross-Platform Distributed LLM Client (Windows x64)

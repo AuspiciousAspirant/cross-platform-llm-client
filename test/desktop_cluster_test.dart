@@ -90,9 +90,12 @@ void main() {
       if (Platform.isWindows) {
         expect(DesktopInferenceEngine.binaryName, 'llama-server.exe');
         expect(DesktopRpcWorker.binaryName, 'rpc-server.exe');
+        expect(DesktopRpcWorker.binaryCandidates, contains('ggml-rpc-server.exe'));
+        expect(DesktopRpcWorker.binaryCandidates, contains('rpc-server.exe'));
       } else {
         expect(DesktopInferenceEngine.binaryName, 'llama-server');
         expect(DesktopRpcWorker.binaryName, 'rpc-server');
+        expect(DesktopRpcWorker.binaryCandidates, contains('ggml-rpc-server'));
       }
     });
 
@@ -206,9 +209,12 @@ void main() {
       if (Platform.isWindows) {
         expect(DesktopEngineManager.masterBinaryName, 'llama-server.exe');
         expect(DesktopEngineManager.workerBinaryName, 'rpc-server.exe');
+        expect(DesktopEngineManager.workerBinaryCandidates, contains('ggml-rpc-server.exe'));
+        expect(DesktopEngineManager.workerBinaryCandidates, contains('rpc-server.exe'));
       } else {
         expect(DesktopEngineManager.masterBinaryName, 'llama-server');
         expect(DesktopEngineManager.workerBinaryName, 'rpc-server');
+        expect(DesktopEngineManager.workerBinaryCandidates, contains('ggml-rpc-server'));
       }
     });
 

@@ -9,9 +9,11 @@ import 'package:llama_flutter_android/llama_flutter_android.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../core/haptics.dart';
 import '../core/ui.dart';
 import '../services/cluster_benchmark_service.dart';
 import '../services/cluster_service.dart';
+import '../services/desktop_engine_manager.dart';
 import '../services/desktop_rpc_worker.dart';
 import '../services/inference_service.dart';
 import '../widgets/unified_engine_setup_card.dart';
@@ -92,7 +94,8 @@ class _ClusterViewState extends State<ClusterView> {
                   if (newRole == ClusterRole.worker && ClusterService.isDesktop) {
                     final bin = await cluster.desktopWorker.findRpcServerBinary();
                     if (bin == null && context.mounted) {
-                      _showRpcServerSetupSheet(context);
+                      final installed = await _promptAndInstallRpcServer(context);
+                      if (!installed) return;
                     }
                   }
                   await cluster.setRole(newRole);
@@ -589,19 +592,28 @@ class _ClusterViewState extends State<ClusterView> {
         alignment: WrapAlignment.center,
         children: [
           PillButton(
-            label: 'Install RPC Server',
+            label: 'Install Automatically',
             icon: Icons.download_rounded,
             primary: true,
-            onPressed: () => _showRpcServerSetupSheet(context),
+            onPressed: () async {
+              final ok = await _promptAndInstallRpcServer(context);
+              if (ok) cluster.startWorker();
+            },
+          ),
+          if (Platform.isWindows)
+            PillButton(
+              label: 'Run in Terminal',
+              icon: Icons.terminal_rounded,
+              onPressed: () => DesktopEngineManager.launchTerminalInstaller(),
+            ),
+          PillButton(
+            label: 'Check again',
+            onPressed: () => cluster.startWorker(),
           ),
           PillButton(
             label: 'GitHub Releases',
             icon: Icons.open_in_new_rounded,
             onPressed: DesktopRpcWorker.openReleasesPage,
-          ),
-          PillButton(
-            label: 'Check again',
-            onPressed: () => cluster.startWorker(),
           ),
         ],
       ),
@@ -966,6 +978,163 @@ class _ClusterViewState extends State<ClusterView> {
         ),
       ],
     );
+  }
+
+  Future<bool> _promptAndInstallRpcServer(BuildContext context) async {
+    final t = AppTokens.of(context);
+    bool isInstalling = false;
+    double progress = 0.0;
+    String status = 'Initializing...';
+    String? error;
+
+    final result = await showAppSheet<bool>(
+      context,
+      title: 'Install RPC Worker Server',
+      subtitle: 'Lend this computer\'s compute to your cluster over LAN',
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          if (isInstalling) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: progress > 0 ? progress : null,
+                      color: t.accent,
+                      backgroundColor: t.hairline,
+                      minHeight: 6,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(status, style: t.caption, textAlign: TextAlign.center),
+                  if (error != null) ...[
+                    const SizedBox(height: 14),
+                    AppNotice(error!, icon: Icons.error_outline_rounded, color: t.red),
+                    const SizedBox(height: 14),
+                    PillButton(
+                      label: 'Close',
+                      onPressed: () => Navigator.of(ctx).pop(false),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }
+
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: t.cardBg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: t.hairline),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: t.accent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(Icons.hub_rounded, color: t.accent, size: 24),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('llama.cpp RPC Daemon', style: t.bodyStrong),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Enables zero-latency model layer offloading over LAN port 50052.',
+                            style: t.caption,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'PrivateLM can automatically download and install the official llama.cpp engine binaries (ggml-rpc-server.exe) and runtime GPU acceleration DLLs for this computer.',
+                style: t.caption,
+              ),
+              const SizedBox(height: 20),
+              PrimaryButton(
+                label: 'Download & Install Automatically',
+                icon: Icons.download_rounded,
+                onPressed: () async {
+                  setModalState(() {
+                    isInstalling = true;
+                    progress = 0.05;
+                    status = 'Connecting to GitHub...';
+                    error = null;
+                  });
+                  try {
+                    final ok = await DesktopEngineManager.downloadAndInstallEngine(
+                      onProgress: (p, msg) {
+                        setModalState(() {
+                          progress = p;
+                          status = msg;
+                        });
+                      },
+                    );
+                    if (ok) {
+                      await cluster.desktopWorker.findRpcServerBinary();
+                      await cluster.refreshWorkerStatus();
+                      if (ctx.mounted) Navigator.of(ctx).pop(true);
+                    } else {
+                      setModalState(() {
+                        error = 'Installation did not complete.';
+                      });
+                    }
+                  } catch (e) {
+                    setModalState(() {
+                      error = 'Installation error: $e';
+                    });
+                  }
+                },
+              ),
+              if (Platform.isWindows) ...[
+                const SizedBox(height: 10),
+                PillButton(
+                  label: 'Run Installer in PowerShell Terminal',
+                  icon: Icons.terminal_rounded,
+                  onPressed: () async {
+                    Haptics.lightImpact();
+                    await DesktopEngineManager.launchTerminalInstaller();
+                    if (ctx.mounted) {
+                      showToast(
+                        'PowerShell Window Launched',
+                        'Observe the installation in the terminal window, then tap Check again.',
+                        tone: ToastTone.info,
+                      );
+                      Navigator.of(ctx).pop(false);
+                    }
+                  },
+                ),
+              ],
+              const SizedBox(height: 10),
+              TonalButton.neutral(
+                context,
+                label: 'Cancel',
+                onTap: () => Navigator.of(ctx).pop(false),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    return result ?? false;
   }
 
   void _showRpcServerSetupSheet(BuildContext context) {
