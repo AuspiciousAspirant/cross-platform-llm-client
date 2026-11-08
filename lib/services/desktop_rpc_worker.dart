@@ -221,7 +221,13 @@ class DesktopRpcWorker {
       if (state != 'stopped') {
         state = code == 0 ? 'stopped' : 'error';
         if (code != 0 && error == null) {
-          error = 'Worker exited unexpectedly with code $code';
+          if (code == -1073741515 || code == 3221225781) {
+            error =
+                'rpc-server exited with code $code (STATUS_DLL_NOT_FOUND). '
+                'Required companion DLLs are missing from the bin/ folder.';
+          } else {
+            error = 'Worker exited unexpectedly with code $code';
+          }
         }
       }
       _process = null;

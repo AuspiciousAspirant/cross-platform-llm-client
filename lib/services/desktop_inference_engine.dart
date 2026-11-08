@@ -370,7 +370,9 @@ class DesktopInferenceEngine {
       handleOutput(line);
     });
 
+    int? processExitCode;
     _process!.exitCode.then((code) {
+      processExitCode = code;
       debugPrint('[DesktopEngine] llama-server exited with code $code');
       _isLoaded = false;
       if (!readyCompleter.isCompleted) {
@@ -412,11 +414,29 @@ class DesktopInferenceEngine {
     if (!success || _process == null) {
       await unloadModel();
       final err = errorBuffer.toString().trim();
+      String failureReason;
+      if (err.isNotEmpty) {
+        failureReason = 'Failed to load model on desktop engine:\n$err';
+      } else if (processExitCode != null) {
+        if (processExitCode == -1073741515 || processExitCode == 3221225781) {
+          failureReason =
+              'llama-server exited immediately with code $processExitCode (STATUS_DLL_NOT_FOUND).\n\n'
+              'Required companion DLLs (such as llama-server-impl.dll, llama.dll, ggml.dll) are missing from the folder.\n\n'
+              'Solution:\n'
+              '1. Extract ALL .dll and .exe files from the llama.cpp release zip into the bin/ folder, OR\n'
+              '2. Use the in-app 1-Click Engine Installer in Settings or Cluster view to install the complete runtime automatically.';
+        } else {
+          failureReason =
+              'llama-server exited unexpectedly with code $processExitCode before initializing.\n'
+              'Check that the model GGUF file is valid and your hardware supports the selected backend.';
+        }
+      } else {
+        failureReason = 'Timed out waiting for llama-server to initialize the model.';
+      }
+
       return DesktopLoadResult(
         success: false,
-        message: err.isNotEmpty
-            ? 'Failed to load model on desktop engine:\n$err'
-            : 'Timed out waiting for llama-server to initialize the model.',
+        message: failureReason,
       );
     }
 
