@@ -103,12 +103,21 @@ if (-not (Test-Path "$buildOutput\privatelm.exe")) {
 # 5. Assemble standalone distribution directory
 Write-Host "`n[4/4] Assembling standalone distribution package..." -ForegroundColor Cyan
 $distDir = "$projectRoot\dist\PrivateLM-Windows-x64"
+
+# Stop any running PrivateLM instance so binaries and DLLs can be updated cleanly
+Get-Process privatelm -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 600
+
 if (Test-Path "$distDir\bin") {
     # Preserve any custom or downloaded engine binaries
     Copy-Item -Path "$distDir\bin\*" -Destination "$projectRoot\bin" -Recurse -Force -ErrorAction SilentlyContinue
 }
-if (Test-Path $distDir) {
-    Remove-Item -Path $distDir -Recurse -Force
+try {
+    if (Test-Path $distDir) {
+        Remove-Item -Path $distDir -Recurse -Force -ErrorAction Stop
+    }
+} catch {
+    Write-Warning "Could not completely delete $distDir (some files may be locked), proceeding with direct overwrite..."
 }
 New-Item -ItemType Directory -Force -Path $distDir | Out-Null
 

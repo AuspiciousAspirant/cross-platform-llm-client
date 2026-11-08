@@ -133,7 +133,8 @@ class SettingsView extends GetView<SettingsController> {
               if (Get.isRegistered<ClusterService>())
                 AppRow(
                   icon: Icons.hub_outlined,
-                  title: 'Phone cluster',
+                  title: 'LAN Cluster & Device Sharing',
+                  subtitle: 'Split models across PCs & mobile devices over Wi-Fi',
                   trailing: Text(
                       switch (Get.find<ClusterService>().role) {
                         ClusterRole.master => 'Master',

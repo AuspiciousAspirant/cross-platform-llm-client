@@ -26,6 +26,11 @@ class ServerController extends GetxController {
   final serverStatus = 'Server stopped'.obs;
   final lastError = RxnString();
 
+  /// Currently active sub-section on the Server/Network screen:
+  /// 0 = LAN Distributed Cluster (model layer splitting over LAN)
+  /// 1 = Local OpenAI API Gateway (HTTP server for Cursor, Obsidian, etc.)
+  final activeSection = 0.obs;
+
   final useApiKey = false.obs;
   final apiKey = ''.obs;
 

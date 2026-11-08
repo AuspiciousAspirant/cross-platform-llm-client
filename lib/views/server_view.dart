@@ -9,6 +9,7 @@ import '../controllers/server_controller.dart';
 import '../core/ui.dart';
 import '../core/haptics.dart';
 import '../widgets/openai_client_presets_sheet.dart';
+import 'cluster_view.dart';
 
 class ServerView extends GetView<ServerController> {
   const ServerView({super.key});
@@ -21,11 +22,11 @@ class ServerView extends GetView<ServerController> {
       backgroundColor: t.bg,
       appBar: appScreenBar(
         context,
-        title: 'Server',
+        title: 'Server & Cluster',
         actions: [
           IconButton(
             tooltip: 'Client Presets & Integrations',
-            icon: const Icon(Icons.hub_outlined, size: 21),
+            icon: const Icon(Icons.integration_instructions_outlined, size: 21),
             onPressed: () {
               Haptics.lightImpact();
               showOpenAiClientPresetsSheet(context);
@@ -34,18 +35,78 @@ class ServerView extends GetView<ServerController> {
         ],
       ),
       body: Obx(() {
-        final isRunning = controller.isRunning.value;
-        final isStarting = controller.isStarting.value;
-        final allowNetwork = controller.allowNetwork.value;
-        final hasKey = controller.apiKey.value.trim().isNotEmpty;
-        final error = controller.lastError.value;
+        final activeSection = controller.activeSection.value;
+        return Column(
+          children: [
+            // Top Section Switcher: LAN Cluster vs OpenAI Gateway
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 580),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: t.cardBg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: t.divider),
+                    ),
+                    padding: const EdgeInsets.all(4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _SectionTabButton(
+                            title: 'LAN Cluster',
+                            subtitle: 'Split models over Wi-Fi',
+                            icon: Icons.hub_outlined,
+                            isSelected: activeSection == 0,
+                            onTap: () {
+                              Haptics.selectionClick();
+                              controller.activeSection.value = 0;
+                            },
+                          ),
+                        ),
+                        Expanded(
+                          child: _SectionTabButton(
+                            title: 'OpenAI Gateway',
+                            subtitle: 'Cursor, Obsidian, WebUI',
+                            icon: Icons.api_rounded,
+                            isSelected: activeSection == 1,
+                            onTap: () {
+                              Haptics.selectionClick();
+                              controller.activeSection.value = 1;
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: activeSection == 0
+                  ? const ClusterView(embedded: true)
+                  : _buildGatewayBody(context, t),
+            ),
+          ],
+        );
+      }),
+    );
+  }
 
-        return Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 860),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-              children: [
+  Widget _buildGatewayBody(BuildContext context, AppTokens t) {
+    final isRunning = controller.isRunning.value;
+    final isStarting = controller.isStarting.value;
+    final allowNetwork = controller.allowNetwork.value;
+    final hasKey = controller.apiKey.value.trim().isNotEmpty;
+    final error = controller.lastError.value;
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 860),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+          children: [
             _StatusHero(controller: controller),
 
             const SizedBox(height: 12),
@@ -221,8 +282,6 @@ class ServerView extends GetView<ServerController> {
           ],
         ),
       ),
-    );
-  }),
     );
   }
 
@@ -514,6 +573,93 @@ class _CodeBlock extends StatelessWidget {
           child: Text(code, style: t.mono.copyWith(height: 1.5)),
         ),
       ]),
+    );
+  }
+}
+
+// ── Segmented section tab button ───────────────────────────────────────
+
+class _SectionTabButton extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _SectionTabButton({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = AppTokens.of(context);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(9),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? t.surface : Colors.transparent,
+            borderRadius: BorderRadius.circular(9),
+            border: isSelected
+                ? Border.all(color: t.accent.withValues(alpha: 0.35), width: 1)
+                : null,
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
+                    )
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: isSelected ? t.accent : t.muted,
+              ),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: t.bodyStrong.copyWith(
+                        color: isSelected ? t.text : t.muted,
+                        fontSize: 13,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      subtitle,
+                      style: t.caption.copyWith(
+                        color: isSelected ? t.text.withValues(alpha: 0.7) : t.muted.withValues(alpha: 0.7),
+                        fontSize: 11,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -20,7 +20,8 @@ import 'ambient_worker_view.dart';
 /// Phone cluster: pick Master (runs the model) or Worker (lends this phone),
 /// and pair them by scanning the worker's QR code.
 class ClusterView extends StatefulWidget {
-  const ClusterView({super.key});
+  final bool embedded;
+  const ClusterView({super.key, this.embedded = false});
 
   @override
   State<ClusterView> createState() => _ClusterViewState();
@@ -69,6 +70,60 @@ class _ClusterViewState extends State<ClusterView> {
   @override
   Widget build(BuildContext context) {
     final t = AppTokens.of(context);
+    final bodyContent = Obx(() {
+      final role = cluster.role;
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: ListView(
+            padding: widget.embedded
+                ? const EdgeInsets.fromLTRB(16, 8, 16, 96)
+                : kPagePadding,
+            children: [
+              const SizedBox(height: 8),
+              AppSegmented<ClusterRole>(
+                items: [
+                  (ClusterRole.off, 'Off'),
+                  if (ClusterService.canBeMaster) (ClusterRole.master, 'Master'),
+                  (ClusterRole.worker, 'Worker'),
+                ],
+                selected: role,
+                onChanged: (newRole) async {
+                  if (newRole == ClusterRole.worker && ClusterService.isDesktop) {
+                    final bin = await cluster.desktopWorker.findRpcServerBinary();
+                    if (bin == null && context.mounted) {
+                      _showRpcServerSetupSheet(context);
+                    }
+                  }
+                  await cluster.setRole(newRole);
+                },
+              ),
+              const SizedBox(height: 16),
+              if (role != ClusterRole.off && cluster.wifiAddress.value == null) ...[
+                AppNotice(
+                  'Turn on Wi-Fi or local network. All devices in the cluster must be on the same local network.',
+                  icon: Icons.wifi_off_rounded,
+                  color: t.orange,
+                ),
+                const SizedBox(height: 16),
+              ],
+              ...switch (role) {
+                ClusterRole.off => _offSection(),
+                ClusterRole.master => _masterSection(context),
+                ClusterRole.worker => _workerSection(context),
+              },
+              const SizedBox(height: 20),
+              _buildDiagnosticsSection(context),
+            ],
+          ),
+        ),
+      );
+    });
+
+    if (widget.embedded) {
+      return bodyContent;
+    }
+
     return Scaffold(
       backgroundColor: t.bg,
       appBar: appScreenBar(context,
@@ -76,53 +131,7 @@ class _ClusterViewState extends State<ClusterView> {
               ? 'Distributed LAN Cluster'
               : 'Phone cluster',
           showBack: true),
-      body: Obx(() {
-        final role = cluster.role;
-        return Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 760),
-            child: ListView(
-              padding: kPagePadding,
-              children: [
-                const SizedBox(height: 8),
-                AppSegmented<ClusterRole>(
-                  items: [
-                    (ClusterRole.off, 'Off'),
-                    if (ClusterService.canBeMaster) (ClusterRole.master, 'Master'),
-                    (ClusterRole.worker, 'Worker'),
-                  ],
-                  selected: role,
-                  onChanged: (newRole) async {
-                    if (newRole == ClusterRole.worker && ClusterService.isDesktop) {
-                      final bin = await cluster.desktopWorker.findRpcServerBinary();
-                      if (bin == null && context.mounted) {
-                        _showRpcServerSetupSheet(context);
-                      }
-                    }
-                    await cluster.setRole(newRole);
-                  },
-                ),
-                const SizedBox(height: 16),
-                if (role != ClusterRole.off && cluster.wifiAddress.value == null) ...[
-                  AppNotice(
-                    'Turn on Wi-Fi or local network. All devices in the cluster must be on the same local network.',
-                    icon: Icons.wifi_off_rounded,
-                    color: t.orange,
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                ...switch (role) {
-                  ClusterRole.off => _offSection(),
-                  ClusterRole.master => _masterSection(context),
-                  ClusterRole.worker => _workerSection(context),
-                },
-                const SizedBox(height: 20),
-                _buildDiagnosticsSection(context),
-              ],
-            ),
-          ),
-        );
-      }),
+      body: bodyContent,
     );
   }
 
