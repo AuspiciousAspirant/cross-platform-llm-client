@@ -184,7 +184,7 @@ class _ChatDrawerState extends State<ChatDrawer> {
                         color: text)),
               ),
               IconButton(
-                tooltip: 'New chat',
+                tooltip: 'New chat (Ctrl+N / ⌘N)',
                 onPressed: _newChat,
                 icon: Icon(Icons.edit_square, size: 20, color: accent),
               ),

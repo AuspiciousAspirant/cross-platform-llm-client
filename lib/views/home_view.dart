@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../controllers/home_controller.dart';
+import '../controllers/chat_controller.dart';
 import '../widgets/chat_drawer.dart';
 import 'chat_view.dart';
 import 'model_view.dart';
@@ -16,19 +18,23 @@ class HomeView extends GetView<HomeController> {
     _NavItem(
         icon: Icons.chat_bubble_outline_rounded,
         activeIcon: Icons.chat_bubble_rounded,
-        label: 'Chat'),
+        label: 'Chat',
+        shortcutHint: 'Ctrl+1 / ⌘1'),
     _NavItem(
         icon: Icons.layers_outlined,
         activeIcon: Icons.layers_rounded,
-        label: 'Models'),
+        label: 'Models',
+        shortcutHint: 'Ctrl+2 / ⌘2'),
     _NavItem(
         icon: Icons.lan_outlined,
         activeIcon: Icons.lan_rounded,
-        label: 'Server'),
+        label: 'Server',
+        shortcutHint: 'Ctrl+3 / ⌘3'),
     _NavItem(
         icon: Icons.settings_outlined,
         activeIcon: Icons.settings,
-        label: 'Settings'),
+        label: 'Settings',
+        shortcutHint: 'Ctrl+4 / ⌘4 / Ctrl+,'),
   ];
 
   bool _isWide(BuildContext context) =>
@@ -38,42 +44,120 @@ class HomeView extends GetView<HomeController> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isWide = _isWide(context);
-    return Obx(() => Scaffold(
-          key: controller.scaffoldKey,
-          backgroundColor: isDark ? Colors.black : Colors.white,
-          drawer: isWide ? null : const ChatDrawer(),
-          drawerScrimColor: Colors.black.withValues(alpha: isDark ? 0.6 : 0.32),
-          // Edge-swipe only where the sidebar makes sense.
-          drawerEnableOpenDragGesture:
-              controller.currentTab.value == 0 && !isWide,
-          drawerEdgeDragWidth: 28,
-          body: Obx(() {
-            final content = IndexedStack(
-              index: controller.currentTab.value,
-              children: const [
-                ChatView(),
-                ModelView(),
-                ServerView(),
-                SettingsView()
-              ],
-            );
-            if (isWide) {
-              return Row(children: [
-                _buildSidebar(context, isDark),
-                VerticalDivider(
-                    width: 0.5,
-                    thickness: 0.5,
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.08)
-                        : Colors.black.withValues(alpha: 0.08)),
-                Expanded(child: content),
-              ]);
-            }
-            return content;
-          }),
-          bottomNavigationBar:
-              isWide ? null : _buildBottomNav(context, isDark),
-        ));
+
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        // Ctrl+N / Cmd+N: New chat
+        const SingleActivator(LogicalKeyboardKey.keyN, control: true): () {
+          if (Get.isRegistered<ChatController>()) {
+            Get.find<ChatController>().createNewChat();
+          }
+          controller.changeTab(0);
+        },
+        const SingleActivator(LogicalKeyboardKey.keyN, meta: true): () {
+          if (Get.isRegistered<ChatController>()) {
+            Get.find<ChatController>().createNewChat();
+          }
+          controller.changeTab(0);
+        },
+
+        // Ctrl+B / Cmd+B: Toggle sidebar rail or chat drawer
+        const SingleActivator(LogicalKeyboardKey.keyB, control: true): () {
+          controller.toggleSidebar();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyB, meta: true): () {
+          controller.toggleSidebar();
+        },
+
+        // Ctrl+1 / Cmd+1: Jump to Chat tab (0)
+        const SingleActivator(LogicalKeyboardKey.digit1, control: true): () =>
+            controller.changeTab(0),
+        const SingleActivator(LogicalKeyboardKey.digit1, meta: true): () =>
+            controller.changeTab(0),
+        const SingleActivator(LogicalKeyboardKey.numpad1, control: true): () =>
+            controller.changeTab(0),
+        const SingleActivator(LogicalKeyboardKey.numpad1, meta: true): () =>
+            controller.changeTab(0),
+
+        // Ctrl+2 / Cmd+2: Jump to Models tab (1)
+        const SingleActivator(LogicalKeyboardKey.digit2, control: true): () =>
+            controller.changeTab(1),
+        const SingleActivator(LogicalKeyboardKey.digit2, meta: true): () =>
+            controller.changeTab(1),
+        const SingleActivator(LogicalKeyboardKey.numpad2, control: true): () =>
+            controller.changeTab(1),
+        const SingleActivator(LogicalKeyboardKey.numpad2, meta: true): () =>
+            controller.changeTab(1),
+
+        // Ctrl+3 / Cmd+3: Jump to Server tab (2)
+        const SingleActivator(LogicalKeyboardKey.digit3, control: true): () =>
+            controller.changeTab(2),
+        const SingleActivator(LogicalKeyboardKey.digit3, meta: true): () =>
+            controller.changeTab(2),
+        const SingleActivator(LogicalKeyboardKey.numpad3, control: true): () =>
+            controller.changeTab(2),
+        const SingleActivator(LogicalKeyboardKey.numpad3, meta: true): () =>
+            controller.changeTab(2),
+
+        // Ctrl+4 / Cmd+4: Jump to Settings tab (3)
+        const SingleActivator(LogicalKeyboardKey.digit4, control: true): () =>
+            controller.changeTab(3),
+        const SingleActivator(LogicalKeyboardKey.digit4, meta: true): () =>
+            controller.changeTab(3),
+        const SingleActivator(LogicalKeyboardKey.numpad4, control: true): () =>
+            controller.changeTab(3),
+        const SingleActivator(LogicalKeyboardKey.numpad4, meta: true): () =>
+            controller.changeTab(3),
+
+        // Ctrl+, / Cmd+,: Jump to Settings tab (3)
+        const SingleActivator(LogicalKeyboardKey.comma, control: true): () =>
+            controller.changeTab(3),
+        const SingleActivator(LogicalKeyboardKey.comma, meta: true): () =>
+            controller.changeTab(3),
+      },
+      child: Focus(
+        autofocus: true,
+        child: Obx(() => Scaffold(
+              key: controller.scaffoldKey,
+              backgroundColor: isDark ? Colors.black : Colors.white,
+              drawer: isWide ? null : const ChatDrawer(),
+              drawerScrimColor:
+                  Colors.black.withValues(alpha: isDark ? 0.6 : 0.32),
+              // Edge-swipe only where the sidebar makes sense.
+              drawerEnableOpenDragGesture:
+                  controller.currentTab.value == 0 && !isWide,
+              drawerEdgeDragWidth: 28,
+              body: Obx(() {
+                final content = IndexedStack(
+                  index: controller.currentTab.value,
+                  children: const [
+                    ChatView(),
+                    ModelView(),
+                    ServerView(),
+                    SettingsView()
+                  ],
+                );
+                if (isWide) {
+                  return Row(children: [
+                    if (controller.isSidebarVisible.value) ...[
+                      _buildSidebar(context, isDark),
+                      VerticalDivider(
+                          width: 0.5,
+                          thickness: 0.5,
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.08)
+                              : Colors.black.withValues(alpha: 0.08)),
+                    ],
+                    Expanded(child: content),
+                  ]);
+                }
+                return content;
+              }),
+              bottomNavigationBar:
+                  isWide ? null : _buildBottomNav(context, isDark),
+            )),
+      ),
+    );
   }
 
   Widget _buildBottomNav(BuildContext context, bool isDark) {
@@ -153,34 +237,43 @@ class HomeView extends GetView<HomeController> {
           child: Padding(
             padding: const EdgeInsets.only(top: 14, bottom: 12),
             child: Center(
-              child: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
+              child: Tooltip(
+                message: 'Toggle Sidebar (Ctrl+B / ⌘B)',
+                preferBelow: false,
+                waitDuration: const Duration(milliseconds: 300),
+                child: InkWell(
+                  onTap: () => controller.toggleSidebar(),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.10)
-                        : Colors.black.withValues(alpha: 0.08),
-                    width: 0.5,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color:
-                          Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
+                  child: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.10)
+                            : Colors.black.withValues(alpha: 0.08),
+                        width: 0.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color:
+                              Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Image.asset(
-                  'assets/icons/appicon.png',
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Icon(
-                    Icons.memory_rounded,
-                    size: 22,
-                    color: accent,
+                    clipBehavior: Clip.antiAlias,
+                    child: Image.asset(
+                      'assets/icons/appicon.png',
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Icon(
+                        Icons.memory_rounded,
+                        size: 22,
+                        color: accent,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -199,7 +292,9 @@ class HomeView extends GetView<HomeController> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                 child: Tooltip(
-                  message: tab.label,
+                  message: tab.shortcutHint != null
+                      ? '${tab.label} (${tab.shortcutHint})'
+                      : tab.label,
                   preferBelow: false,
                   waitDuration: const Duration(milliseconds: 300),
                   child: Material(
@@ -266,6 +361,10 @@ class _NavItem {
   final IconData icon;
   final IconData activeIcon;
   final String label;
+  final String? shortcutHint;
   const _NavItem(
-      {required this.icon, required this.activeIcon, required this.label});
+      {required this.icon,
+      required this.activeIcon,
+      required this.label,
+      this.shortcutHint});
 }

@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
@@ -38,6 +40,73 @@ Color _sep(BuildContext c) => Theme.of(c).brightness == Brightness.dark
 
 class ChatView extends GetView<ChatController> {
   const ChatView({super.key});
+
+  bool _isDesktopEnvironment(BuildContext context) {
+    if (!kIsWeb &&
+        (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+      return true;
+    }
+    return MediaQuery.of(context).size.width >= 800;
+  }
+
+  void _insertComposerNewline() {
+    final text = controller.textController.text;
+    final selection = controller.textController.selection;
+    final newText = StringBuffer();
+    int newCursorPosition = 0;
+
+    if (selection.isValid && selection.start >= 0) {
+      newText.write(text.substring(0, selection.start));
+      newText.write('\n');
+      newText.write(text.substring(selection.end));
+      newCursorPosition = selection.start + 1;
+    } else {
+      newText.write(text);
+      newText.write('\n');
+      newCursorPosition = newText.length;
+    }
+
+    controller.textController.value = TextEditingValue(
+      text: newText.toString(),
+      selection: TextSelection.collapsed(offset: newCursorPosition),
+    );
+    controller.inputText.value = controller.textController.text;
+  }
+
+  KeyEventResult _handleComposerKeyEvent(
+      FocusNode node, KeyEvent event, bool isDesktop) {
+    if (!isDesktop) return KeyEventResult.ignored;
+
+    final isEnter = event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter;
+
+    if (!isEnter) return KeyEventResult.ignored;
+
+    if (event is KeyDownEvent) {
+      final isShift = HardwareKeyboard.instance.isShiftPressed;
+      if (isShift) {
+        _insertComposerNewline();
+        return KeyEventResult.handled;
+      } else {
+        final text = controller.textController.text.trim();
+        final isGenerating =
+            controller.isLoading.value || controller.isStreaming.value;
+        if (text.isNotEmpty && !isGenerating) {
+          controller.sendMessage();
+        }
+        return KeyEventResult.handled;
+      }
+    } else if (event is KeyRepeatEvent) {
+      final isShift = HardwareKeyboard.instance.isShiftPressed;
+      if (isShift) {
+        _insertComposerNewline();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.handled;
+    }
+
+    return KeyEventResult.handled;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -244,7 +313,9 @@ class ChatView extends GetView<ChatController> {
           // empty sessions.
           if (controller.messages.isEmpty) return const SizedBox(width: 8);
           return IconButton(
-              tooltip: 'New chat',
+              tooltip: _isDesktopEnvironment(context)
+                  ? 'New chat (Ctrl+N / ⌘N)'
+                  : 'New chat',
               icon: Icon(Icons.edit_square,
                   size: 20, color: isDark ? Colors.white : Colors.black),
               onPressed: () {
@@ -601,6 +672,7 @@ class ChatView extends GetView<ChatController> {
 
   // ── Input Bar ──
   Widget _inputBar(BuildContext context, bool isDark) {
+    final isDesktop = _isDesktopEnvironment(context);
     return Container(
       color: isDark ? Colors.black : Colors.white,
       child: SafeArea(
@@ -916,6 +988,23 @@ class ChatView extends GetView<ChatController> {
                     final loadingModel =
                         Get.find<InferenceService>().isLoadingModel.value ||
                             Get.find<LocalImageService>().isLoadingModel.value;
+
+                    // Ensure desktop key handler is hooked directly on input focus node
+                    if (isDesktop) {
+                      controller.inputFocus.onKeyEvent = (node, event) =>
+                          _handleComposerKeyEvent(node, event, true);
+                    } else {
+                      controller.inputFocus.onKeyEvent = null;
+                    }
+
+                    final hint = !noModel
+                        ? (isDesktop
+                            ? 'Ask anything · Enter to send, Shift+Enter for newline'
+                            : 'Ask anything')
+                        : loadingModel
+                            ? 'Loading model…'
+                            : 'Load a model to start chatting';
+
                     return GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: noModel && !loadingModel
@@ -924,36 +1013,56 @@ class ChatView extends GetView<ChatController> {
                         child: Container(
                           constraints: const BoxConstraints(minHeight: 40),
                           alignment: Alignment.centerLeft,
-                          child: TextField(
-                            enabled: !noModel,
-                            controller: controller.textController,
-                            focusNode: controller.inputFocus,
-                            textCapitalization: TextCapitalization.sentences,
-                            onChanged: (v) => controller.inputText.value = v,
-                            maxLines: 5,
-                            minLines: 1,
-                            style: GoogleFonts.inter(
-                                fontSize: 15,
-                                color: isDark ? Colors.white : Colors.black),
-                            decoration: InputDecoration(
-                              hintText: !noModel
-                                  ? 'Ask anything'
-                                  : loadingModel
-                                      ? 'Loading model…'
-                                      : 'Load a model to start chatting',
-                              hintStyle: GoogleFonts.inter(
-                                  fontSize: 15,
-                                  color: Theme.of(context).hintColor),
-                              border: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              disabledBorder: InputBorder.none,
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 8),
-                              isDense: true,
-                              filled: false,
+                          child: Focus(
+                            onKeyEvent: (node, event) =>
+                                _handleComposerKeyEvent(node, event, isDesktop),
+                            child: Tooltip(
+                              message: isDesktop && !noModel
+                                  ? 'Enter to send, Shift+Enter for newline'
+                                  : '',
+                              waitDuration: const Duration(milliseconds: 700),
+                              child: TextField(
+                                enabled: !noModel,
+                                controller: controller.textController,
+                                focusNode: controller.inputFocus,
+                                textCapitalization:
+                                    TextCapitalization.sentences,
+                                onChanged: (v) =>
+                                    controller.inputText.value = v,
+                                maxLines: 5,
+                                minLines: 1,
+                                style: GoogleFonts.inter(
+                                    fontSize: 15,
+                                    color:
+                                        isDark ? Colors.white : Colors.black),
+                                decoration: InputDecoration(
+                                  hintText: hint,
+                                  hintStyle: GoogleFonts.inter(
+                                      fontSize: isDesktop ? 13.5 : 15,
+                                      color: Theme.of(context).hintColor),
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  disabledBorder: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 8),
+                                  isDense: true,
+                                  filled: false,
+                                ),
+                                onSubmitted: (_) {
+                                  if (isDesktop) {
+                                    final text =
+                                        controller.textController.text.trim();
+                                    final isGenerating =
+                                        controller.isLoading.value ||
+                                            controller.isStreaming.value;
+                                    if (text.isNotEmpty && !isGenerating) {
+                                      controller.sendMessage();
+                                    }
+                                  }
+                                },
+                              ),
                             ),
-                            onSubmitted: (_) => controller.sendMessage(),
                           ),
                         ));
                   })),
@@ -1078,32 +1187,52 @@ class ChatView extends GetView<ChatController> {
                       onTap = controller.toggleListening;
                     }
 
+                    final buttonTooltip = isDesktop
+                        ? (loading
+                            ? 'Stop generation'
+                            : listening
+                                ? 'Stop listening'
+                                : noModel
+                                    ? ''
+                                    : hasContent
+                                        ? 'Send (Enter · Shift+Enter for newline)'
+                                        : 'Voice input')
+                        : '';
+
+                    final buttonContent = AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeInOut,
+                      margin: const EdgeInsets.symmetric(vertical: 3),
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                          color: bgColor, shape: BoxShape.circle),
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 180),
+                        transitionBuilder: (child, anim) =>
+                            ScaleTransition(scale: anim, child: child),
+                        child: Icon(iconData,
+                            key: ValueKey(iconData),
+                            color: loading
+                                ? (isDark ? Colors.black : Colors.white)
+                                : (listening || (hasContent && !noModel))
+                                    ? Colors.white
+                                    : Theme.of(context)
+                                        .hintColor
+                                        .withValues(alpha: noModel ? 0.4 : 1),
+                            size: 20),
+                      ),
+                    );
+
                     return GestureDetector(
                       onTap: onTap,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        curve: Curves.easeInOut,
-                        margin: const EdgeInsets.symmetric(vertical: 3),
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                            color: bgColor, shape: BoxShape.circle),
-                        child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 180),
-                          transitionBuilder: (child, anim) =>
-                              ScaleTransition(scale: anim, child: child),
-                          child: Icon(iconData,
-                              key: ValueKey(iconData),
-                              color: loading
-                                  ? (isDark ? Colors.black : Colors.white)
-                                  : (listening || (hasContent && !noModel))
-                                      ? Colors.white
-                                      : Theme.of(context)
-                                          .hintColor
-                                          .withValues(alpha: noModel ? 0.4 : 1),
-                              size: 20),
-                        ),
-                      ),
+                      child: buttonTooltip.isNotEmpty
+                          ? Tooltip(
+                              message: buttonTooltip,
+                              waitDuration: const Duration(milliseconds: 400),
+                              child: buttonContent,
+                            )
+                          : buttonContent,
                     );
                   }),
                 ])),
